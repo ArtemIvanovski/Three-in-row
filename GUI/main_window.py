@@ -2,7 +2,9 @@ from PyQt5.QtCore import QSize, Qt
 from PyQt5.QtGui import QIcon, QFont, QPixmap, QFontDatabase
 from PyQt5.QtWidgets import QPushButton, QLabel, QWidget
 
+from GUI.create_game_window import CreateGameWindow
 from GUI.game_window import GameWindow
+from GUI.join_game_window import JoinGameWindow
 from GUI.settings_window import SettingsWindow
 from core.setting_deploy import get_resource_path
 from logger import logger
@@ -44,7 +46,7 @@ class MainWindow(QWidget):
                                             ypos=550, func_handler=self._create_game)
         self.join_btn = self._menu_button("Присоединиться",
                                           "assets/buttons/start.png",
-                                          ypos=675, func_handler=self.close)
+                                          ypos=675, func_handler=self._join_game)
 
         sett = self._icon_btn("assets/buttons/settings.png", 60, 60,
                               self.WIDTH - 70, 15, self._open_settings)
@@ -87,5 +89,16 @@ class MainWindow(QWidget):
 
     def _create_game(self):
         logger.info("Создание новой игры")
+        create_game_window = CreateGameWindow(self)
+        create_game_window.move(self.x() + (self.width() - create_game_window.width()) // 2,
+                                self.y() + (self.height() - create_game_window.height()) // 2)
+        create_game_window.exec_()
+
+    def _join_game(self):
+        logger.info("Присоединение к игре")
+        # join_game_window = JoinGameWindow(self)
+        # join_game_window.move(self.x() + (self.width() - join_game_window.width()) // 2,
+        #                       self.y() + (self.height() - join_game_window.height()) // 2)
+        # join_game_window.exec_()
         self.create_game_window = GameWindow()
         self.create_game_window.show()

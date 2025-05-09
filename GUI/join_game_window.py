@@ -1,83 +1,131 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QIcon
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QLineEdit
+import threading
 
-from GUI.game_window import GameWindow
-from GUI.stat_pos import get_nicknames
+from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QIcon, QFont, QFontDatabase, QPixmap
+from PyQt5.QtWidgets import (
+    QDialog, QLabel, QLineEdit, QPushButton, QSpinBox, QComboBox, QListWidget
+)
+
 from core.client import Client
+from core.server import Server
 from core.setting_deploy import get_resource_path
+from logger import logger
 
 
 class JoinGameWindow(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.main_window = parent
-        self.setWindowTitle("Three in row")
-        self.setWindowFlags(self.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        self.setWindowIcon(QIcon(get_resource_path("assets/icon.png")))
-        self.setGeometry(300, 200, 400, 400)
-        self.setStyleSheet("background-color: #ffcc00; border-radius: 10px;")
-        self.setModal(True)
-
         self.client = None
+        self.server = None
+        self.stop_event = threading.Event()
+        self.selected_mode = None
+        self.setWindowOpacity(0.0)
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setModal(True)
+        self.setFixedSize(400, 500)
 
-        layout = QVBoxLayout()
+        # шрифт
+        fid = QFontDatabase.addApplicationFont(get_resource_path("assets/FontFont.otf"))
+        fams = QFontDatabase.applicationFontFamilies(fid)
+        self.font = fams[0] if fams else self.font().family()
 
-        label_nickname = QLabel("Выберите никнейм:")
-        label_nickname.setStyleSheet("font-size: 18px; color: #333; font-weight: bold;")
-        layout.addWidget(label_nickname)
+        # фон
+        bg = QLabel(self)
+        bg.setStyleSheet(
+            "background: rgb(255,204,141);"
+            "border:6px solid #af5829;"
+            "border-radius:20px;"
+        )
+        bg.setGeometry(20, 40, 360, 460)
+        bg.lower()
 
-        self.nickname_combo = QComboBox()
-        self.nickname_combo.addItem("-- Выберите никнейм --")
-        self.nickname_combo.addItems(get_nicknames())
-        self.nickname_combo.currentIndexChanged.connect(self.show_code_input)
-        self.nickname_combo.setStyleSheet("background-color: white; padding: 5px; font-size: 16px;")
+        # заголовок
+        pic = QLabel(self)
+        p = QPixmap(get_resource_path("assets/setting_title.png")) \
+            .scaled(300, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pic.setPixmap(p)
+        pic.setGeometry(50, 0, 300, 100)
 
-        layout.addWidget(self.nickname_combo)
+        title = QLabel("Присоединит-\n    ся к игре", self)
+        title.setFont(QFont(self.font, 16, QFont.Bold))
+        title.setStyleSheet("color: rgb(230,230,40);")
+        title.setGeometry(105, 20, 200, 60)
 
-        self.label_code = QLabel("Введите код доступа:")
-        self.label_code.setStyleSheet("font-size: 18px; color: #333; font-weight: bold;")
-        self.label_code.setVisible(False)
-        layout.addWidget(self.label_code)
+        close = QPushButton(self)
+        close.setIcon(QIcon(get_resource_path("assets/buttons/cancel.png")))
+        close.setIconSize(QSize(60, 60))
+        close.setFlat(True)
+        close.setGeometry(340, 15, 60, 60)
+        close.clicked.connect(self.reject)
 
-        self.code_input = QLineEdit()
-        self.code_input.setPlaceholderText("Введите код...")
-        self.code_input.setStyleSheet("background-color: white; padding: 5px; font-size: 16px;")
-        self.code_input.setVisible(False)
-        layout.addWidget(self.code_input)
+        lbl_n = QLabel("Ваш никнейм:", self)
+        lbl_n.setFont(QFont(self.font, 14))
+        lbl_n.setGeometry(50, 130, 150, 30)
 
-        self.join_button = QPushButton("Присоединиться к игре")
-        self.join_button.setVisible(False)
-        self.join_button.clicked.connect(self.join_game)
+        self.nick_edit = QLineEdit(self)
+        self.nick_edit.setStyleSheet(
+            "background-color: rgb(254,243,219); border:2px solid #af5829; border-radius:6px;"
+        )
+        self.nick_edit.setFont(QFont(self.font, 12))
+        self.nick_edit.setPlaceholderText("Введите никнейм")
+        self.nick_edit.setGeometry(50, 160, 300, 30)
+        self.nick_edit.textChanged.connect(self._on_nick_changed)
+
+        self.lbl_code = QLabel("Пригласительный код:", self)
+        self.lbl_code.setFont(QFont(self.font, 14))
+        self.lbl_code.setGeometry(50, 200, 300, 30)
+        self.lbl_code.hide()
+        self.code_edit = QLineEdit(self)
+        self.code_edit.setStyleSheet(
+            "background-color: rgb(254,243,219); border:2px solid #af5829; border-radius:6px;"
+        )
+        self.code_edit.setFont(QFont(self.font, 12))
+        self.code_edit.setPlaceholderText("Введите код")
+        self.code_edit.setGeometry(50, 230, 300, 30)
+        self.code_edit.textChanged.connect(self._on_code_changed)
+        self.code_edit.hide()
+
+        self.join_button = QPushButton("Присоединится к игре", self)
+        self.join_button.setFont(QFont(self.font, 14))
+        self.join_button.setGeometry(50, 280, 300, 40)
         self.join_button.setStyleSheet(
-            "background-color: #ff5733; color: white; font-size: 18px; font-weight: bold; padding: 10px; border-radius: 5px;")
-        self.join_button.setDisabled(True)
-        layout.addWidget(self.join_button)
+            "background-color: rgb(254,243,219); border:2px solid #af5829; border-radius:6px;"
+        )
+        self.join_button.clicked.connect(self.join_game)
+        self.join_button.hide()
 
-        self.status_label = QLabel("")
-        self.status_label.setStyleSheet("font-size: 18px; color: green; font-weight: bold;")
+        self.status_label = QLabel("", self)
+        self.status_label.setFont(QFont(self.font, 14))
+        self.status_label.setGeometry(50, 340, 300, 80)
         self.status_label.setVisible(False)
-        layout.addWidget(self.status_label)
 
-        self.setLayout(layout)
+        # show animation
+        self._animate_show()
 
-    def show_code_input(self):
-        if self.nickname_combo.currentIndex() > 0:
-            self.label_code.setVisible(True)
-            self.code_input.setVisible(True)
-            self.join_button.setVisible(True)
-            self.join_button.setDisabled(False)
-            self.nickname_combo.setDisabled(True)
+    def _on_nick_changed(self, text):
+        if len(text) >= 1:
+            self.lbl_code.show()
+            self.code_edit.show()
+        else:
+            self.lbl_code.hide()
+            self.code_edit.hide()
+
+    def _on_code_changed(self, text):
+        if len(text) >= 1:
+            self.join_button.show()
+        else:
+            self.join_button.hide()
 
     def join_game(self):
-        session_code = self.code_input.text().strip()
+        session_code = self.code_edit.text().strip()
         if not session_code:
             self.show_error("Введите код!")
             return
 
         self.show_status("Подключение...")
 
-        nickname = self.nickname_combo.currentText()
+        nickname = self.nick_edit.text()
         self.client = Client(session_code, nickname, self)
 
     def show_error(self, message):
@@ -88,20 +136,28 @@ class JoinGameWindow(QDialog):
         self.nickname_combo.setCurrentIndex(0)
         self.nickname_combo.setDisabled(False)
 
-    def show_success(self, message="Вы успешно подключились! Ожидайте начала игры."):
+    def show_success(self, message="Вы успешно подключились!/n Ожидайте начала игры."):
         self.status_label.setText(message)
-        self.status_label.setStyleSheet("font-size: 18px; color: green; font-weight: bold;")
+        self.status_label.setStyleSheet("font-size: 14px; color: green; font-weight: bold;")
         self.status_label.setVisible(True)
 
     def show_status(self, message):
         self.status_label.setText(message)
-        self.status_label.setStyleSheet("font-size: 18px; color: blue; font-weight: bold;")
+        self.status_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
         self.status_label.setVisible(True)
 
     def start_game(self, players_number: int):
-        self.client.gui = GameWindow(num_players=players_number, main_window=self.main_window)
-        self.client.gui.ctrl = self.client.ctrl
-        self.client.gui.apply_state("start_game")
-        self.client.gui.show()
+        # self.client.gui = GameWindow(num_players=players_number, main_window=self.main_window)
+        # self.client.gui.ctrl = self.client.ctrl
+        # self.client.gui.apply_state("start_game")
+        # self.client.gui.show()
+        logger.info("Game start")
         self.accept()
 
+    def _animate_show(self):
+        fade = QPropertyAnimation(self, b"windowOpacity", self)
+        fade.setDuration(300)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setEasingCurve(QEasingCurve.InOutQuad)
+        fade.start(QPropertyAnimation.DeleteWhenStopped)

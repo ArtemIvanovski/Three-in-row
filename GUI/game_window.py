@@ -6,10 +6,12 @@ from PyQt5.QtWidgets import (
     QMainWindow, QLabel,
     QFrame, QPushButton
 )
-
+from copy import deepcopy
 from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
+from core.board import Board
+from core.enums import Bonus
 from core.setting_deploy import get_resource_path
 from logger import logger
 
@@ -40,6 +42,8 @@ class GameWindow(QMainWindow):
         super().__init__()
         self.animations = []
         self.selected_tile = None
+        self.tile_labels = {}
+
         self._load_fonts()
         self._init_window()
         self._init_background()
@@ -49,7 +53,11 @@ class GameWindow(QMainWindow):
         self._init_board_container()
         self._init_grid()
         self._init_digit_labels()
-        self._populate_board()
+        # self._populate_board()
+
+        self.board = Board()
+
+        self._render_from_board(first=True)
 
         self.display_number('timer', 789, 'blue')
         self.display_number('score', 123, 'red')
@@ -321,3 +329,36 @@ class GameWindow(QMainWindow):
         cy = self.y() + (self.height() - self._settings.height()) // 2
         self._settings.move(cx, cy)
         self._settings.show()
+
+    def _pix_for_elem(self, elem):
+        if elem is None:
+            return None
+        root = "assets/elements"
+        if elem.bonus == Bonus.NONE:
+            img = f"{root}/{elem.color.value}.png"
+        elif elem.bonus == Bonus.BOMB:
+            img = f"{root}/bomb.png"
+        else:
+            axis = "h" if elem.bonus == Bonus.ROCKET_H else "v"
+            img = f"{root}/rocket_{axis}.png"
+        return QPixmap(get_resource_path(img)).scaled(self.CELL_SIZE, self.CELL_SIZE)
+
+    def _render_from_board(self, first=False):
+        for lbl in self.tile_labels.values():
+            lbl.deleteLater()
+        self.tile_labels.clear()
+
+        for r in range(self.ROWS):
+            for c in range(self.COLS):
+                elem = self.board.cell(r, c)
+                print(elem)
+                pix = self._pix_for_elem(elem)
+                lbl = TileLabel(self, elem.color.value, r, c)
+                lbl.setPixmap(pix)
+                x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
+                y = self.GRID_ORIGIN.y() + (-1 if first else r) * self.CELL_SIZE
+                lbl.setGeometry(x, y, self.CELL_SIZE, self.CELL_SIZE)
+                lbl.raise_()
+                self.tile_labels[(r, c)] = lbl
+                if first:
+                    self._animate_fall(lbl, r)

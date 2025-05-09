@@ -12,7 +12,7 @@ from logger import logger
 class Server(QObject):
     gui_cmd = pyqtSignal(str)
 
-    def __init__(self, value_players=3, nickname=None):
+    def __init__(self, nickname=None):
         super().__init__()
         self.gui = None
         self.nickname = nickname
@@ -32,7 +32,7 @@ class Server(QObject):
         # self.port = get_free_port()
         self.port = 8080
         self.session_code = str(self.port)
-        self.value_players = value_players
+        self.value_players = 1
         self.clients = {}
         self.broadcasting = True
 
