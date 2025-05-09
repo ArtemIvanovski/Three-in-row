@@ -214,7 +214,6 @@ class GameWindow(QMainWindow):
         if not matched:
             return
 
-        # запускаем анимации взрыва
         last_boom = None
         for r, c in matched:
             tile = self.grid[r][c]

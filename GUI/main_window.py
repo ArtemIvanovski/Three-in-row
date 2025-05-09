@@ -1,83 +1,91 @@
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QIcon
-from PyQt5.QtWidgets import QWidget, QPushButton, QHBoxLayout, QLabel, QVBoxLayout
+from PyQt5.QtCore import QSize, Qt
+from PyQt5.QtGui import QIcon, QFont, QPixmap, QFontDatabase
+from PyQt5.QtWidgets import QPushButton, QLabel, QWidget
 
 from GUI.game_window import GameWindow
-from GUI.rules_window import RulesWindow
+from GUI.settings_window import SettingsWindow
 from core.setting_deploy import get_resource_path
 from logger import logger
 
 
 class MainWindow(QWidget):
+    WIDTH, HEIGHT = 500, 880
+
     def __init__(self):
         super().__init__()
-        self.join_game_window = None
-        self.create_game_window = None
-        self.rules_window = None
-        self.init_ui()
-
-    def init_ui(self):
-        logger.info("Инициализация главного окна")
         self.setWindowTitle("Three in row")
-        self.setGeometry(100, 100, 500, 880)
+        self.setFixedSize(self.WIDTH, self.HEIGHT)
         self.setWindowIcon(QIcon(get_resource_path("assets/icon.png")))
-        self.setFixedSize(500, 880)
+        self._load_font()
+        self._make_background()
+        self._make_ui()
 
-        background = QLabel(self)
-        background.setPixmap(QPixmap(get_resource_path("assets/start_background.png")).scaled(500, 880))
-        background.setGeometry(0, 0, 500, 880)
+    def _load_font(self):
+        fid = QFontDatabase.addApplicationFont(get_resource_path("assets/FontFont.otf"))
+        fams = QFontDatabase.applicationFontFamilies(fid)
+        self.font_family = fams[0] if fams else self.font().family()
 
-        btn_create_game = QPushButton("Создать игру")
-        btn_join_game = QPushButton("Присоединиться к игре")
-        btn_rules = QPushButton("Правила игры")
+    def _make_background(self):
+        bg = QLabel(self)
+        bg.setPixmap(QPixmap(get_resource_path("assets/start_background.png"))
+                     .scaled(self.WIDTH, self.HEIGHT))
+        bg.setGeometry(0, 0, self.WIDTH, self.HEIGHT)
+        bg.lower()
 
-        button_style = """
-                    QPushButton {
-                        background-color: rgba(255, 255, 255, 0.9);
-                        color: black;
-                        font-size: 24px;
-                        font-weight: bold;
-                        border-radius: 10px;
-                        padding: 15px 30px;
-                    }
-                    QPushButton:hover {
-                        background-color: rgba(255, 255, 255, 1);
-                    }
-                """
+    def _make_ui(self):
+        circle = QLabel(self)
+        circle_pix = QPixmap(get_resource_path("assets/circle.png")).scaled(380, 380,
+                                                                            Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        circle.setPixmap(circle_pix)
+        circle.move((self.WIDTH - circle_pix.width()) // 2, 90)
 
-        btn_create_game.setStyleSheet(button_style)
-        btn_create_game.clicked.connect(self.create_game)
+        self.create_btn = self._menu_button("Создать игру",
+                                            "assets/buttons/start.png",
+                                            ypos=550, func_handler=self._create_game)
+        self.join_btn = self._menu_button("Присоединиться",
+                                          "assets/buttons/start.png",
+                                          ypos=675, func_handler=self.close)
 
-        btn_join_game.setStyleSheet(button_style)
-        btn_join_game.clicked.connect(self.join_game)
+        sett = self._icon_btn("assets/buttons/settings.png", 60, 60,
+                              self.WIDTH - 70, 15, self._open_settings)
+        close = self._icon_btn("assets/buttons/exit.png", 60, 60,
+                               15, 15, self.close)
 
-        btn_rules.setStyleSheet(button_style)
-        btn_rules.clicked.connect(self.show_rules)
+    def _menu_button(self, text, icon_path, ypos, func_handler=None):
+        btn = QPushButton(self)
+        btn.setIcon(QIcon(get_resource_path(icon_path)))
+        btn.setIconSize(QSize(400, 90))
+        btn.setFixedSize(400, 90)
+        btn.move((self.WIDTH - 400) // 2, ypos)
+        btn.setFlat(True)
+        btn.clicked.connect(func_handler)
 
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(btn_create_game)
-        button_layout.addWidget(btn_join_game)
-        button_layout.addWidget(btn_rules)
-        button_layout.setSpacing(50)
-        button_layout.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)
+        lbl = QLabel(text, self)
+        lbl.setFont(QFont(self.font_family, 20, QFont.Bold))
+        lbl.setStyleSheet("color: #af5829;")
+        lbl.adjustSize()
+        lbl.move(btn.x() + (btn.width() - lbl.width()) // 2,
+                 btn.y() + (btn.height() - lbl.height()) // 2)
+        lbl.raise_()
+        lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+        return btn
 
-        main_layout = QVBoxLayout(self)
-        main_layout.addStretch()
-        main_layout.addLayout(button_layout)
+    def _icon_btn(self, path, w, h, x, y, slot):
+        b = QPushButton(self)
+        b.setIcon(QIcon(get_resource_path(path)))
+        b.setIconSize(QSize(w, h))
+        b.setFlat(True)
+        b.setGeometry(x, y, w, h)
+        b.clicked.connect(slot)
+        return b
 
-        self.setLayout(main_layout)
+    def _open_settings(self):
+        dlg = SettingsWindow(self, is_home_visible=False)
+        dlg.move(self.x() + (self.width() - dlg.width()) // 2,
+                 self.y() + (self.height() - dlg.height()) // 2)
+        dlg.exec_()
 
-    def show_rules(self):
-        logger.info("Открытие окна с правилами игры")
-        self.rules_window = RulesWindow()
-        self.rules_window.show()
-
-    def create_game(self):
+    def _create_game(self):
         logger.info("Создание новой игры")
         self.create_game_window = GameWindow()
         self.create_game_window.show()
-
-    def join_game(self):
-        logger.info("Присоединение к игре")
-        self.join_game_window = JoinGameWindow(self)
-        self.join_game_window.show()

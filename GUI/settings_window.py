@@ -1,7 +1,7 @@
 from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QFontDatabase
 from PyQt5.QtWidgets import (
-    QDialog, QLabel, QPushButton, QGraphicsOpacityEffect
+    QDialog, QLabel, QPushButton
 )
 
 from core.setting_deploy import get_resource_path
@@ -9,8 +9,9 @@ from core.setting_deploy import get_resource_path
 
 class SettingsWindow(QDialog):
 
-    def __init__(self, parent):
+    def __init__(self, parent, is_home_visible=True):
         super().__init__(parent)
+        self.is_home_visible = is_home_visible
         self.setWindowOpacity(0.0)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
         self.setAttribute(Qt.WA_TranslucentBackground, True)
@@ -48,12 +49,13 @@ class SettingsWindow(QDialog):
         close_btn.setGeometry(280, 20, 60, 60)
         close_btn.clicked.connect(self.close)
 
-        self.home_btn = QPushButton(self)
-        self.home_btn.setIcon(QIcon(get_resource_path("assets/buttons/home.png")))
-        self.home_btn.setIconSize(QSize(80, 80))
-        self.home_btn.setFlat(True)
-        self.home_btn.setGeometry(210, 155, 80, 80)
-        self.home_btn.clicked.connect(self.close)
+        if self.is_home_visible:
+            self.home_btn = QPushButton(self)
+            self.home_btn.setIcon(QIcon(get_resource_path("assets/buttons/home.png")))
+            self.home_btn.setIconSize(QSize(80, 80))
+            self.home_btn.setFlat(True)
+            self.home_btn.setGeometry(210, 155, 80, 80)
+            self.home_btn.clicked.connect(self.close)
 
         self.sound_on = True
         self.sound_btn = self._make_icon_button("sound", 24, 155)
@@ -77,7 +79,6 @@ class SettingsWindow(QDialog):
         btn._off = off
         return btn
 
-    # -------------------------------------------------------------------------
     def _toggle_sound(self):
         self.sound_on = not self.sound_on
         self.sound_btn._off.setVisible(not self.sound_on)
@@ -112,8 +113,11 @@ class SettingsWindow(QDialog):
 
         group.addAnimation(bounce(self.findChild(QLabel, None)))
 
-        for btn in (self.sound_btn, self.music_btn, self.home_btn):
-            group.addAnimation(bounce(btn, dur=1000))
+        btns = [self.sound_btn, self.music_btn]
+        if hasattr(self, "home_btn"):
+            btns.append(self.home_btn)
 
+        for btn in btns:
+            group.addAnimation(bounce(btn, dur=1000))
         fade.start()
         group.start()
