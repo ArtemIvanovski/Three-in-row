@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QFrame, QPushButton
 )
 
+from GUI.end_game_window import EndGameWindow
 from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
@@ -452,6 +453,9 @@ class GameWindow(QMainWindow):
     def _update_score(self, score: int):
         self.score += score
         print(f"self.score - {self.score}")
+        if self.score >= 999:
+            self._show_end_game("Ты хорош набрал огогого!", winner_name="Перчик")
+            return
         self.display_number('score', self.score)
 
     def display_number(self, kind, value, color: str = None, x=None, y=None):
@@ -492,5 +496,12 @@ class GameWindow(QMainWindow):
 
     def _tick_clock(self):
         self.elapsed_seconds += 1
+        if self.elapsed_seconds >= 10:
+            self._show_end_game("Время вышло", winner_name="перчик")
         self.display_number('timer', self.elapsed_seconds)
 
+    def _show_end_game(self, message: str, winner_name: str = ""):
+        dlg = EndGameWindow(self, player_name=winner_name, message=message)
+        dlg.exec_()
+        self._clock_timer.stop()
+        self.close()
