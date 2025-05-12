@@ -6,7 +6,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QLabel,
     QFrame, QPushButton
 )
-from copy import deepcopy
+
 from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
@@ -22,7 +22,6 @@ class GameWindow(QMainWindow):
     CELL_SIZE = 60
     GRID_ORIGIN = QPoint(40, 300)
 
-    # Resources
     ICON_PATH = get_resource_path("assets/icon.png")
     BACKGROUND_PATH = get_resource_path("assets/game_background.png")
     TITLE_PATH = get_resource_path("assets/board.png")
@@ -53,7 +52,6 @@ class GameWindow(QMainWindow):
         self._init_board_container()
         self._init_grid()
         self._init_digit_labels()
-        # self._populate_board()
 
         self.board = Board()
 
@@ -61,6 +59,15 @@ class GameWindow(QMainWindow):
 
         self.display_number('timer', 789, 'blue')
         self.display_number('score', 123, 'red')
+
+    def _open_settings(self):
+        if hasattr(self, "_settings") and self._settings.isVisible():
+            return
+        self._settings = SettingsWindow(self)
+        cx = self.x() + (self.width() - self._settings.width()) // 2
+        cy = self.y() + (self.height() - self._settings.height()) // 2
+        self._settings.move(cx, cy)
+        self._settings.show()
 
     def _load_fonts(self):
         font_id = QFontDatabase.addApplicationFont(self.FONT_PATH)
@@ -164,12 +171,6 @@ class GameWindow(QMainWindow):
         anim.start()
         self.animations.append(anim)
 
-    def _populate_board(self):
-        self.grid = [[None] * self.COLS for _ in range(self.ROWS)]
-        for r in range(self.ROWS):
-            for c in range(self.COLS):
-                self._spawn_tile(r, c, random.choice(list(self.TILE_IMAGES)), True)
-
     def _spawn_tile(self, r, c, elem, from_top=False):
         pix = QPixmap(self.TILE_IMAGES[elem]).scaled(self.CELL_SIZE, self.CELL_SIZE)
         t = TileLabel(self, elem, r, c)
@@ -205,64 +206,51 @@ class GameWindow(QMainWindow):
                 elem = random.choice(list(self.TILE_IMAGES))
                 self._spawn_tile(row, col, elem, from_top=True)
 
-    def handle_swap_request(self, a: TileLabel, b: TileLabel):
-        if abs(a.row - b.row) + abs(a.col - b.col) != 1:
+    def handle_swap_request(self, a_lbl: TileLabel, b_lbl: TileLabel):
+        if abs(a_lbl.row - b_lbl.row) + abs(a_lbl.col - b_lbl.col) != 1:
             return
-        self._animate_swap(a, b, lambda: self._after_first_swap(a, b))
+        self._animate_swap(a_lbl, b_lbl,
+                           lambda: self._after_swap_logic(a_lbl, b_lbl))
 
-    def _after_first_swap(self, a: TileLabel, b: TileLabel):
-        if self._forms_match_after_swap(a, b):
-            self._commit_swap(a, b)
-            self._destroy_matches()
-        else:
-            self._animate_swap(a, b)
+    def _after_swap_logic(self, a_lbl, b_lbl):
+        a = (a_lbl.row, a_lbl.col)
+        b = (b_lbl.row, b_lbl.col)
 
-    def _destroy_matches(self):
-        matched = self._collect_matches()
-        if not matched:
+        success, removed, bonuses = self.board.swap(a, b)
+
+        if not success:
+            self._animate_swap(a_lbl, b_lbl, on_finished=None)
+            print(f"graphic matrix")
+            self.print_matrix()
             return
+        print("removed first wave:", removed)
 
-        last_boom = None
-        for r, c in matched:
-            tile = self.grid[r][c]
-            if not tile:
-                continue
-            last_boom = ExplosionLabel(self, tile.element, tile.pos(), self.CELL_SIZE, fps=200)
-            tile.deleteLater()
-            self.grid[r][c] = None
-            last_boom.destroyed.connect(self._apply_gravity)
+        for r, c in removed:
+            lbl = self.tile_labels.pop((r, c), None)
+            if lbl:
+                ExplosionLabel(self, lbl.element, lbl.pos(),
+                               self.CELL_SIZE, fps=200)
+                lbl.deleteLater()
 
-    def _collect_matches(self):
-        matches = set()
-        for r in range(self.ROWS):
-            run = [(r, 0)]
-            for c in range(1, self.COLS):
-                if self.grid[r][c] and self.grid[r][c - 1] and self.grid[r][c].element == self.grid[r][c - 1].element:
-                    run.append((r, c))
-                else:
-                    if len(run) >= 3:
-                        matches.update(run)
-                    run = [(r, c)]
-            if len(run) >= 3:
-                matches.update(run)
-        for c in range(self.COLS):
-            run = [(0, c)]
-            for r in range(1, self.ROWS):
-                if self.grid[r][c] and self.grid[r - 1][c] and self.grid[r][c].element == self.grid[r - 1][c].element:
-                    run.append((r, c))
-                else:
-                    if len(run) >= 3:
-                        matches.update(run)
-                    run = [(r, c)]
-            if len(run) >= 3:
-                matches.update(run)
-        return matches
+        print(bonuses)
+        for r, c, bonus in bonuses:
+            # Создаем новый TileLabel на этом месте
+            # используем ваш метод _pix_for_elem или напрямую
+            pix = self._pix_for_elem(self.board.cell(r, c))
+            lbl = TileLabel(self,
+                            self.board.cell(r, c).color.value,  # элемент с бонусом
+                            r, c)
+            print(lbl)
+            lbl.setPixmap(pix)
+            x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
+            y = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
+            lbl.setGeometry(x, y, self.CELL_SIZE, self.CELL_SIZE)
+            lbl.raise_()
+            lbl.show()
+            self.tile_labels[(r, c)] = lbl
 
-    def _commit_swap(self, a: TileLabel, b: TileLabel):
-        self.grid[a.row][a.col], self.grid[b.row][b.col] = b, a
-        a.row, b.row = b.row, a.row
-        a.col, b.col = b.col, a.col
-        logger.info('Swap committed')
+        print(f"graphic matrix")
+        self.print_matrix()
 
     def _animate_swap(self, t1: TileLabel, t2: TileLabel, on_finished=None):
         group = QParallelAnimationGroup(self)
@@ -272,37 +260,17 @@ class GameWindow(QMainWindow):
             anim.setEndValue(end)
             anim.setEasingCurve(QEasingCurve.InOutQuad)
             group.addAnimation(anim)
-        if on_finished:
-            group.finished.connect(on_finished)
+
+        def _after_anim():
+            self._swap_tiles(t1, t2)
+            if on_finished:
+                on_finished()
+
+        group.finished.connect(_after_anim)
         group.start()
         self.animations.append(group)
+        # чистим уже закончившиеся
         self.animations = [g for g in self.animations if g.state() != QPropertyAnimation.Stopped]
-
-    def _forms_match_after_swap(self, a: TileLabel, b: TileLabel) -> bool:
-        def elem_at(r, c):
-            if (r, c) == (a.row, a.col):
-                return b.element
-            if (r, c) == (b.row, b.col):
-                return a.element
-            return self.grid[r][c].element
-
-        return any(self._has_line(r, c, elem_at) for r, c in {(a.row, a.col), (b.row, b.col)})
-
-    def _has_line(self, r, c, elem_at):
-        target = elem_at(r, c)
-
-        def count(dir_r, dir_c):
-            i, j = r + dir_r, c + dir_c
-            cnt = 0
-            while 0 <= i < self.ROWS and 0 <= j < self.COLS and elem_at(i, j) == target:
-                cnt += 1
-                i += dir_r
-                j += dir_c
-            return cnt
-
-        horiz = count(0, -1) + 1 + count(0, 1)
-        vert = count(-1, 0) + 1 + count(1, 0)
-        return horiz >= 3 or vert >= 3
 
     def display_number(self, kind, value, color, x=None, y=None):
         if x is None or y is None:
@@ -321,15 +289,6 @@ class GameWindow(QMainWindow):
             lbl.raise_()
             self.digit_labels[kind].append(lbl)
 
-    def _open_settings(self):
-        if hasattr(self, "_settings") and self._settings.isVisible():
-            return
-        self._settings = SettingsWindow(self)
-        cx = self.x() + (self.width() - self._settings.width()) // 2
-        cy = self.y() + (self.height() - self._settings.height()) // 2
-        self._settings.move(cx, cy)
-        self._settings.show()
-
     def _pix_for_elem(self, elem):
         if elem is None:
             return None
@@ -341,6 +300,7 @@ class GameWindow(QMainWindow):
         else:
             axis = "h" if elem.bonus == Bonus.ROCKET_H else "v"
             img = f"{root}/rocket_{axis}.png"
+            print(img)
         return QPixmap(get_resource_path(img)).scaled(self.CELL_SIZE, self.CELL_SIZE)
 
     def _render_from_board(self, first=False):
@@ -351,7 +311,6 @@ class GameWindow(QMainWindow):
         for r in range(self.ROWS):
             for c in range(self.COLS):
                 elem = self.board.cell(r, c)
-                print(elem)
                 pix = self._pix_for_elem(elem)
                 lbl = TileLabel(self, elem.color.value, r, c)
                 lbl.setPixmap(pix)
@@ -362,3 +321,87 @@ class GameWindow(QMainWindow):
                 self.tile_labels[(r, c)] = lbl
                 if first:
                     self._animate_fall(lbl, r)
+
+    def _render_diff(self, old, new):
+        removed = []  # какие позиции опустели
+        moved = []  # (lbl, new_row)
+
+        # --- проход по старой сетке ------------------------------------------
+        pos_of_elem: dict[object, tuple[int, int]] = {}
+        for r in range(self.ROWS):
+            for c in range(self.COLS):
+                if old[r][c]:
+                    pos_of_elem[id(old[r][c])] = (r, c)
+
+        for r in range(self.ROWS):
+            for c in range(self.COLS):
+                o = old[r][c]
+                n = new[r][c]
+
+                if o is None:
+                    continue
+
+                if n is o:
+                    if (r, c) != (n.y, n.x):
+                        moved.append((self.tile_labels[(r, c)], n.y))
+                        self.tile_labels[(r, c)].row = n.y
+                        self.tile_labels[(n.y, n.x)] = self.tile_labels.pop((r, c))
+                else:
+                    removed.append((r, c))
+
+        # --- взрывы -----------------------------------------------------------
+        for r, c in removed:
+            lbl = self.tile_labels.pop((r, c), None)
+            if lbl:
+                ExplosionLabel(self, lbl.element, lbl.pos(),
+                               self.CELL_SIZE, fps=120)
+                lbl.deleteLater()
+
+        # --- новые элементы ---------------------------------------------------
+        for r in range(self.ROWS):
+            for c in range(self.COLS):
+                if new[r][c] is None:
+                    continue
+                if (r, c) not in self.tile_labels:
+                    # появился новый сверху
+                    pix = self._pix_for_elem(new[r][c])
+                    lbl = TileLabel(self, new[r][c].color.value, r, c)
+                    lbl.setPixmap(pix)
+                    x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
+                    lbl.setGeometry(x, self.GRID_ORIGIN.y() - self.CELL_SIZE,
+                                    self.CELL_SIZE, self.CELL_SIZE)
+                    lbl.raise_()
+                    self.tile_labels[(r, c)] = lbl
+                    self._animate_fall(lbl, r)
+
+        # --- смещения существующих плиток ------------------------------------
+        for lbl, new_row in moved:
+            self._animate_fall(lbl, new_row)
+
+    def print_matrix(self):
+        for r in range(self.ROWS):
+            row_str = ''
+            for c in range(self.COLS):
+                lbl = self.tile_labels.get((r, c))
+                if lbl:
+                    row_str += lbl.element[0]
+                else:
+                    row_str += '.'
+            print(row_str)
+
+    def _swap_tiles(self, tile1: TileLabel, tile2: TileLabel):
+        """Поменять местами объекты и их учёт в self.tile_labels."""
+        # 1) Забираем старые координаты
+        r1, c1 = tile1.row, tile1.col
+        r2, c2 = tile2.row, tile2.col
+
+        # 2) Меняем их в самих метках
+        tile1.row, tile1.col, tile2.row, tile2.col = r2, c2, r1, c1
+
+        # 3) Меняем ключи в словаре
+        # удалим старые записи
+        self.tile_labels.pop((r1, c1), None)
+        self.tile_labels.pop((r2, c2), None)
+        # и запишем по новым
+        self.tile_labels[(tile1.row, tile1.col)] = tile1
+        self.tile_labels[(tile2.row, tile2.col)] = tile2
