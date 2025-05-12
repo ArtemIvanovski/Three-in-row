@@ -1,6 +1,6 @@
-from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
-from PyQt5.QtGui import QPixmap, QFont, QFontDatabase, QIcon
-from PyQt5.QtWidgets import QDialog, QLabel, QPushButton, QSizePolicy
+from PyQt5.QtCore import Qt, QPropertyAnimation, QEasingCurve
+from PyQt5.QtGui import QFont, QFontDatabase
+from PyQt5.QtWidgets import QDialog, QLabel, QPushButton
 
 from core.setting_deploy import get_resource_path
 
