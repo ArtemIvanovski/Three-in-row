@@ -8,8 +8,6 @@ from core.setting_deploy import get_resource_path
 class ExplosionLabel(QLabel):
     def __init__(self, parent, color: str, pos: QPoint, size: int, fps: int = 30):
         super().__init__(parent)
-
-        # загружаем кадры
         self.frames = [
             QPixmap(get_resource_path(
                 f"assets/elements/explosion/{color}/frame_{i:02d}.png")

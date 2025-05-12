@@ -33,9 +33,14 @@ class Board:
           - removed: set[(r,c)] — без бонусных клеток
           - bonuses: list[(r,c, bonus_type)]
         """
-        r1, c1 = a;
+        r1, c1 = a
         r2, c2 = b
+        print(a, b)
         self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
+        e1 = self.grid[r1][c1]
+        e2 = self.grid[r2][c2]
+        e1.x, e1.y = c1, r1
+        e2.x, e2.y = c2, r2
         if not self._any_matches_after({a, b}):
             # откат
             self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
@@ -49,7 +54,9 @@ class Board:
         to_remove = matched - set((r, c) for r, c, _ in bonus_cells)
         for r, c in to_remove:
             self.grid[r][c] = None
+        print("after swap matrix")
         print(self)
+
         return True, matched, bonus_cells
 
     def _create_bonuses(self,
@@ -226,17 +233,44 @@ class Board:
 
         return True, removed
 
-    def _gravity(self):
-        for col in range(self.COLS):
+    def collapse_and_fill(self) -> tuple[list[tuple[Element, int, int]], list[Element]]:
+        """
+        Запускает гравитацию и досыпание.
+        Возвращает:
+          fallen   – список (elem, new_r, new_c) для старых элементов,
+          spawned  – элементы, которые добавлены сверху
+        """
+        fallen: list[tuple[Element, int, int]] = []
+
+        # ---------- гравитация ----------
+        for c in range(self.COLS):
             write = self.ROWS - 1
             for read in range(self.ROWS - 1, -1, -1):
-                if self.grid[read][col] is not None:
+                e = self.grid[read][c]
+                if e is not None:
                     if read != write:
-                        elem = self.grid[read][col]
-                        self.grid[write][col] = elem;
-                        self.grid[read][col] = None
-                        elem.y = write
+                        self.grid[write][c] = e
+                        self.grid[read][c] = None
+                        e.y, e.x = write, c
+                        fallen.append((e, write, c))
                     write -= 1
+
+        # ---------- досыпаем ----------
+        spawned: list[Element] = []
+        for c in range(self.COLS):
+            for r in range(self.ROWS):
+                if self.grid[r][c] is None:
+                    new = Element(r, c, random.choice(self.COLORS))
+                    self.grid[r][c] = new
+                    spawned.append(new)
+
+        # гарантия «есть ход» – если полe получилось без ходов,
+        # просто меняем цвет одного случайного элемента
+        if not self.has_move():
+            e = random.choice([e for row in self.grid for e in row])
+            e.color = random.choice([c for c in self.COLORS if c != e.color])
+        print(self)
+        return fallen, spawned
 
     def _fill_columns(self):
         for col in range(self.COLS):

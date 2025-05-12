@@ -217,30 +217,30 @@ class GameWindow(QMainWindow):
         b = (b_lbl.row, b_lbl.col)
 
         success, removed, bonuses = self.board.swap(a, b)
-
+        print("removed first wave:", removed)
         if not success:
             self._animate_swap(a_lbl, b_lbl, on_finished=None)
-            print(f"graphic matrix")
-            self.print_matrix()
             return
-        print("removed first wave:", removed)
 
+        # --- 1. Анимация удаления первой волны ---
         for r, c in removed:
             lbl = self.tile_labels.pop((r, c), None)
-            if lbl:
-                ExplosionLabel(self, lbl.element, lbl.pos(),
-                               self.CELL_SIZE, fps=200)
-                lbl.deleteLater()
+            if not lbl:
+                continue
+
+            explosion = ExplosionLabel(self, lbl.element.color.value, lbl.pos(), self.CELL_SIZE, fps=100)
+
+            lbl.deleteLater()
+
+            explosion.raise_()
+            explosion.show()
 
         print(bonuses)
+        # --- 2. Появление бонусных плиток ---
         for r, c, bonus in bonuses:
-            # Создаем новый TileLabel на этом месте
-            # используем ваш метод _pix_for_elem или напрямую
-            pix = self._pix_for_elem(self.board.cell(r, c))
-            lbl = TileLabel(self,
-                            self.board.cell(r, c).color.value,  # элемент с бонусом
-                            r, c)
-            print(lbl)
+            elem = self.board.cell(r, c)
+            lbl = TileLabel(self, elem)
+            pix = self._pix_for_elem(elem)
             lbl.setPixmap(pix)
             x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
             y = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
@@ -249,7 +249,37 @@ class GameWindow(QMainWindow):
             lbl.show()
             self.tile_labels[(r, c)] = lbl
 
-        print(f"graphic matrix")
+        fallen, spawned = self.board.collapse_and_fill()
+        print(f"fallen^ {fallen}")
+        # 3a: анимируем “старые” плитки
+        for elem, new_r, new_c in fallen:
+            # ищем метку по объекту element
+            for lbl in self.tile_labels.values():
+                if lbl.element is elem:
+                    lbl.row, lbl.col = new_r, new_c
+                    self.tile_labels.pop((elem.y, elem.x), None)  # до смены координат
+                    self.tile_labels[(new_r, new_c)] = lbl
+                    self._animate_fall(lbl, new_r)
+                    break
+        self.print_matrix()
+        print(f"spawned^ {spawned}")
+
+        for elem in spawned:
+            lbl = TileLabel(self, elem)
+            pix = self._pix_for_elem(elem)
+            lbl.setPixmap(pix)
+
+            x = self.GRID_ORIGIN.x() + elem.y * self.CELL_SIZE
+            y = self.GRID_ORIGIN.y() - elem.x * self.CELL_SIZE
+            print(f"x {x} y {y}")
+            lbl.setGeometry(x, y,
+                            self.CELL_SIZE, self.CELL_SIZE)
+            lbl.raise_()
+            lbl.show()
+
+            self.tile_labels[(elem.x, elem.y)] = lbl
+            self._animate_fall(lbl, elem.x)
+
         self.print_matrix()
 
     def _animate_swap(self, t1: TileLabel, t2: TileLabel, on_finished=None):
@@ -300,7 +330,6 @@ class GameWindow(QMainWindow):
         else:
             axis = "h" if elem.bonus == Bonus.ROCKET_H else "v"
             img = f"{root}/rocket_{axis}.png"
-            print(img)
         return QPixmap(get_resource_path(img)).scaled(self.CELL_SIZE, self.CELL_SIZE)
 
     def _render_from_board(self, first=False):
@@ -312,12 +341,13 @@ class GameWindow(QMainWindow):
             for c in range(self.COLS):
                 elem = self.board.cell(r, c)
                 pix = self._pix_for_elem(elem)
-                lbl = TileLabel(self, elem.color.value, r, c)
+                lbl = TileLabel(self, elem)
                 lbl.setPixmap(pix)
                 x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
                 y = self.GRID_ORIGIN.y() + (-1 if first else r) * self.CELL_SIZE
                 lbl.setGeometry(x, y, self.CELL_SIZE, self.CELL_SIZE)
                 lbl.raise_()
+                lbl.show()
                 self.tile_labels[(r, c)] = lbl
                 if first:
                     self._animate_fall(lbl, r)
@@ -383,10 +413,7 @@ class GameWindow(QMainWindow):
             row_str = ''
             for c in range(self.COLS):
                 lbl = self.tile_labels.get((r, c))
-                if lbl:
-                    row_str += lbl.element[0]
-                else:
-                    row_str += '.'
+                row_str += lbl.element.short() if lbl else '.'
             print(row_str)
 
     def _swap_tiles(self, tile1: TileLabel, tile2: TileLabel):

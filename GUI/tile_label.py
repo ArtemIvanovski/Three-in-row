@@ -5,16 +5,17 @@ from PyQt5.QtWidgets import (
     QGraphicsColorizeEffect
 )
 
+from core.element import Element
+
 
 class TileLabel(QLabel):
 
     HIGHLIGHT_MS = 1000
 
-    def __init__(self, parent, element: str, row: int, col: int):
+    def __init__(self, parent, element: Element):
         super().__init__(parent)
         self.element = element
-        self.row = row
-        self.col = col
+        self.row, self.col = element.x, element.y
         self._drag_origin = None
         self._dragging = False
 
