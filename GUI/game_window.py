@@ -1,6 +1,6 @@
 import random
 
-from PyQt5.QtCore import QPoint, QSize, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
+from PyQt5.QtCore import QPoint, QSize, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QTimer
 from PyQt5.QtGui import QPixmap, QIcon, QFontDatabase, QFont
 from PyQt5.QtWidgets import (
     QMainWindow, QLabel,
@@ -11,7 +11,7 @@ from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
 from core.board import Board
-from core.enums import Bonus
+from core.enums import Bonus, Color
 from core.setting_deploy import get_resource_path
 from logger import logger
 
@@ -57,17 +57,16 @@ class GameWindow(QMainWindow):
 
         self._render_from_board(first=True)
 
-        self.display_number('timer', 789, 'blue')
-        self.display_number('score', 123, 'red')
+        self.elapsed_seconds = 0
 
-    def _open_settings(self):
-        if hasattr(self, "_settings") and self._settings.isVisible():
-            return
-        self._settings = SettingsWindow(self)
-        cx = self.x() + (self.width() - self._settings.width()) // 2
-        cy = self.y() + (self.height() - self._settings.height()) // 2
-        self._settings.move(cx, cy)
-        self._settings.show()
+        self._clock_timer = QTimer(self)
+        self._clock_timer.setInterval(1000)
+        self._clock_timer.timeout.connect(self._tick_clock)
+        self._clock_timer.start()
+
+        self.display_number('timer', self.elapsed_seconds)
+        self.score = 0
+        self.display_number('score', self.score)
 
     def _load_fonts(self):
         font_id = QFontDatabase.addApplicationFont(self.FONT_PATH)
@@ -171,41 +170,6 @@ class GameWindow(QMainWindow):
         anim.start()
         self.animations.append(anim)
 
-    def _spawn_tile(self, r, c, elem, from_top=False):
-        pix = QPixmap(self.TILE_IMAGES[elem]).scaled(self.CELL_SIZE, self.CELL_SIZE)
-        t = TileLabel(self, elem, r, c)
-        t.setPixmap(pix)
-
-        x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
-        y_final = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
-        if from_top:
-            y_start = self.GRID_ORIGIN.y() - self.CELL_SIZE
-            t.setGeometry(x, y_start, self.CELL_SIZE, self.CELL_SIZE)
-            t.raise_()
-            self._animate_fall(t, r)
-        else:
-            t.setGeometry(x, y_final, self.CELL_SIZE, self.CELL_SIZE)
-            t.raise_()
-
-        self.grid[r][c] = t
-
-    def _apply_gravity(self):
-        for col in range(self.COLS):
-            write_row = self.ROWS - 1
-            for read_row in range(self.ROWS - 1, -1, -1):
-                tile = self.grid[read_row][col]
-                if tile:
-                    if read_row != write_row:
-                        self.grid[write_row][col] = tile
-                        self.grid[read_row][col] = None
-                        tile.row = write_row
-                        self._animate_fall(tile, write_row)
-                    write_row -= 1
-
-            for row in range(write_row, -1, -1):
-                elem = random.choice(list(self.TILE_IMAGES))
-                self._spawn_tile(row, col, elem, from_top=True)
-
     def handle_swap_request(self, a_lbl: TileLabel, b_lbl: TileLabel):
         if abs(a_lbl.row - b_lbl.row) + abs(a_lbl.col - b_lbl.col) != 1:
             return
@@ -222,7 +186,26 @@ class GameWindow(QMainWindow):
             self._animate_swap(a_lbl, b_lbl, on_finished=None)
             return
 
-        # --- 1. Анимация удаления первой волны ---
+        if not bonuses and removed:
+            self._update_score(len(removed))
+            for r, c in removed:
+                lbl = self.tile_labels.pop((r, c), None)
+
+                if lbl and lbl.element.bonus in [Bonus.ROCKET_H, Bonus.ROCKET_V]:
+                    self._fire_rocket(r, c, lbl.element.bonus)
+                    lbl.deleteLater()
+                elif lbl:
+                    explosion = ExplosionLabel(self, lbl.element.color.value, lbl.pos(), self.CELL_SIZE, fps=100,
+                                               bonus=lbl.element.bonus)
+
+                    lbl.deleteLater()
+
+                    explosion.raise_()
+                    explosion.show()
+            self._update_game()
+            return
+
+        self._update_score(len(removed))
         for r, c in removed:
             lbl = self.tile_labels.pop((r, c), None)
             if not lbl:
@@ -236,7 +219,6 @@ class GameWindow(QMainWindow):
             explosion.show()
 
         print(bonuses)
-        # --- 2. Появление бонусных плиток ---
         for r, c, bonus in bonuses:
             elem = self.board.cell(r, c)
             lbl = TileLabel(self, elem)
@@ -249,9 +231,14 @@ class GameWindow(QMainWindow):
             lbl.show()
             self.tile_labels[(r, c)] = lbl
 
+        self._update_game()
+
+        self.print_matrix()
+
+    def _update_game(self):
         fallen, spawned = self.board.collapse_and_fill()
         print(f"fallen^ {fallen}")
-        # 3a: анимируем “старые” плитки
+
         for elem, new_r, new_c in fallen:
             # ищем метку по объекту element
             for lbl in self.tile_labels.values():
@@ -282,6 +269,66 @@ class GameWindow(QMainWindow):
 
         self.print_matrix()
 
+        while self.board.step():
+            logger.info("step")
+            removed, bonuses = self.board.get_auto_matched()
+            for r, c in removed:
+                lbl = self.tile_labels.pop((r, c), None)
+                if not lbl:
+                    continue
+
+                explosion = ExplosionLabel(self, lbl.element.color.value, lbl.pos(), self.CELL_SIZE, fps=100)
+
+                lbl.deleteLater()
+
+                explosion.raise_()
+                explosion.show()
+
+            print(bonuses)
+            # --- 2. Появление бонусных плиток ---
+            for r, c, bonus in bonuses:
+                elem = self.board.cell(r, c)
+                lbl = TileLabel(self, elem)
+                pix = self._pix_for_elem(elem)
+                lbl.setPixmap(pix)
+                x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
+                y = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
+                lbl.setGeometry(x, y, self.CELL_SIZE, self.CELL_SIZE)
+                lbl.raise_()
+                lbl.show()
+                self.tile_labels[(r, c)] = lbl
+
+            fallen, spawned = self.board.collapse_and_fill()
+            print(f"fallen^ {fallen}")
+
+            for elem, new_r, new_c in fallen:
+                for lbl in self.tile_labels.values():
+                    if lbl.element is elem:
+                        lbl.row, lbl.col = new_r, new_c
+                        self.tile_labels.pop((elem.y, elem.x), None)  # до смены координат
+                        self.tile_labels[(new_r, new_c)] = lbl
+                        self._animate_fall(lbl, new_r)
+                        break
+            self.print_matrix()
+            print(f"spawned^ {spawned}")
+
+            for elem in spawned:
+                lbl = TileLabel(self, elem)
+                pix = self._pix_for_elem(elem)
+                lbl.setPixmap(pix)
+
+                x = self.GRID_ORIGIN.x() + elem.y * self.CELL_SIZE
+                y = self.GRID_ORIGIN.y() - elem.x * self.CELL_SIZE
+                print(f"x {x} y {y}")
+                lbl.setGeometry(x, y,
+                                self.CELL_SIZE, self.CELL_SIZE)
+                lbl.raise_()
+                lbl.show()
+
+                self.tile_labels[(elem.x, elem.y)] = lbl
+                self._animate_fall(lbl, elem.x)
+            self.print_matrix()
+
     def _animate_swap(self, t1: TileLabel, t2: TileLabel, on_finished=None):
         group = QParallelAnimationGroup(self)
         for tile, end in ((t1, t2.pos()), (t2, t1.pos())):
@@ -301,23 +348,6 @@ class GameWindow(QMainWindow):
         self.animations.append(group)
         # чистим уже закончившиеся
         self.animations = [g for g in self.animations if g.state() != QPropertyAnimation.Stopped]
-
-    def display_number(self, kind, value, color, x=None, y=None):
-        if x is None or y is None:
-            coords = {'timer': (125, 95), 'score': (305, 95)}
-            x, y = coords[kind]
-        for lbl in self.digit_labels[kind]:
-            lbl.deleteLater()
-        self.digit_labels[kind].clear()
-        for i, ch in enumerate(str(value)):
-            path = get_resource_path(f"assets/score/{color}/{ch}.png")
-            pix = QPixmap(path)
-            lbl = QLabel(self)
-            lbl.setPixmap(pix)
-            w, h = pix.width(), pix.height()
-            lbl.setGeometry(x + i * w, y, w, h)
-            lbl.raise_()
-            self.digit_labels[kind].append(lbl)
 
     def _pix_for_elem(self, elem):
         if elem is None:
@@ -352,62 +382,6 @@ class GameWindow(QMainWindow):
                 if first:
                     self._animate_fall(lbl, r)
 
-    def _render_diff(self, old, new):
-        removed = []  # какие позиции опустели
-        moved = []  # (lbl, new_row)
-
-        # --- проход по старой сетке ------------------------------------------
-        pos_of_elem: dict[object, tuple[int, int]] = {}
-        for r in range(self.ROWS):
-            for c in range(self.COLS):
-                if old[r][c]:
-                    pos_of_elem[id(old[r][c])] = (r, c)
-
-        for r in range(self.ROWS):
-            for c in range(self.COLS):
-                o = old[r][c]
-                n = new[r][c]
-
-                if o is None:
-                    continue
-
-                if n is o:
-                    if (r, c) != (n.y, n.x):
-                        moved.append((self.tile_labels[(r, c)], n.y))
-                        self.tile_labels[(r, c)].row = n.y
-                        self.tile_labels[(n.y, n.x)] = self.tile_labels.pop((r, c))
-                else:
-                    removed.append((r, c))
-
-        # --- взрывы -----------------------------------------------------------
-        for r, c in removed:
-            lbl = self.tile_labels.pop((r, c), None)
-            if lbl:
-                ExplosionLabel(self, lbl.element, lbl.pos(),
-                               self.CELL_SIZE, fps=120)
-                lbl.deleteLater()
-
-        # --- новые элементы ---------------------------------------------------
-        for r in range(self.ROWS):
-            for c in range(self.COLS):
-                if new[r][c] is None:
-                    continue
-                if (r, c) not in self.tile_labels:
-                    # появился новый сверху
-                    pix = self._pix_for_elem(new[r][c])
-                    lbl = TileLabel(self, new[r][c].color.value, r, c)
-                    lbl.setPixmap(pix)
-                    x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
-                    lbl.setGeometry(x, self.GRID_ORIGIN.y() - self.CELL_SIZE,
-                                    self.CELL_SIZE, self.CELL_SIZE)
-                    lbl.raise_()
-                    self.tile_labels[(r, c)] = lbl
-                    self._animate_fall(lbl, r)
-
-        # --- смещения существующих плиток ------------------------------------
-        for lbl, new_row in moved:
-            self._animate_fall(lbl, new_row)
-
     def print_matrix(self):
         for r in range(self.ROWS):
             row_str = ''
@@ -432,3 +406,91 @@ class GameWindow(QMainWindow):
         # и запишем по новым
         self.tile_labels[(tile1.row, tile1.col)] = tile1
         self.tile_labels[(tile2.row, tile2.col)] = tile2
+
+    def _fire_rocket(self, r: int, c: int, orientation: Bonus):
+        # 1) создаём QLabel для ракеты
+        rocket_img = "rocket_h.png" if orientation == Bonus.ROCKET_H else "rocket_v.png"
+        rocket_lbl = QLabel(self)
+        pix = QPixmap(get_resource_path(f"assets/elements/{rocket_img}")) \
+            .scaled(self.CELL_SIZE, self.CELL_SIZE)
+        rocket_lbl.setPixmap(pix)
+        start_x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
+        start_y = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
+        rocket_lbl.setGeometry(start_x, start_y, self.CELL_SIZE, self.CELL_SIZE)
+        rocket_lbl.show()
+        rocket_lbl.raise_()
+
+        anim = QPropertyAnimation(rocket_lbl, b"pos", self)
+        anim.setDuration(100)  # время полёта
+        anim.setEasingCurve(QEasingCurve.InQuad)
+        if orientation == Bonus.ROCKET_H:
+            end_x = self.GRID_ORIGIN.x()
+            anim.setStartValue(QPoint(start_x, start_y))
+            anim.setEndValue(QPoint(end_x, start_y))
+        else:
+            # летим вниз до низа поля
+            end_y = self.GRID_ORIGIN.y()
+            anim.setStartValue(QPoint(start_x, start_y))
+            anim.setEndValue(QPoint(start_x, end_y))
+
+        # 3) по окончании полёта – взрыв
+        def _on_rocket_done():
+            rocket_lbl.deleteLater()
+            # создаём ExplosionLabel точно в точке конца полёта
+            explosion = ExplosionLabel(
+                parent=self,
+                color=Color.RED.value,
+                pos=rocket_lbl.pos(),
+                size=self.CELL_SIZE,
+                fps=100,
+                bonus=Bonus.NONE  # тут цвет уже неважен
+            )
+
+        anim.finished.connect(_on_rocket_done)
+        anim.start()
+
+    def _update_score(self, score: int):
+        self.score += score
+        print(f"self.score - {self.score}")
+        self.display_number('score', self.score)
+
+    def display_number(self, kind, value, color: str = None, x=None, y=None):
+        _colors = ['blue', 'red', 'green', 'orange', 'purple', 'yellow']
+        if color is None:
+            color = random.choice(_colors)
+        if x is None or y is None:
+            coords = {'timer': (125, 95), 'score': (305, 95)}
+            x, y = coords[kind]
+        for lbl in self.digit_labels[kind]:
+            lbl.deleteLater()
+        self.digit_labels[kind].clear()
+        for i, ch in enumerate(str(value)):
+            path = get_resource_path(f"assets/score/{color}/{ch}.png")
+            pix = QPixmap(path)
+            lbl = QLabel(self)
+            lbl.setPixmap(pix)
+            w, h = pix.width(), pix.height()
+            lbl.setGeometry(x + i * w, y, w, h)
+            lbl.raise_()
+            lbl.show()
+            self.digit_labels[kind].append(lbl)
+
+    def _open_settings(self):
+        if hasattr(self, "_settings") and self._settings.isVisible():
+            return
+
+        self._clock_timer.stop()
+
+        self._settings = SettingsWindow(self)
+        cx = self.x() + (self.width() - self._settings.width()) // 2
+        cy = self.y() + (self.height() - self._settings.height()) // 2
+        self._settings.move(cx, cy)
+
+        self._settings.finished.connect(self._clock_timer.start)
+
+        self._settings.show()
+
+    def _tick_clock(self):
+        self.elapsed_seconds += 1
+        self.display_number('timer', self.elapsed_seconds)
+

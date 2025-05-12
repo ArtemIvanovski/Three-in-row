@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Iterable, Set
 
 from core.enums import Color, Bonus
 from core.element import Element
+from logger import logger
 
 
 class Board:
@@ -41,6 +42,17 @@ class Board:
         e2 = self.grid[r2][c2]
         e1.x, e1.y = c1, r1
         e2.x, e2.y = c2, r2
+        print(f"e1{e1}  e2{e2}")
+        if e1.bonus != Bonus.NONE:
+            logger.info(f"{e1} bonus activated")
+            removed = self._trigger_bonus((e1.y, e1.x))
+            return True, removed, []
+
+        if e2.bonus != Bonus.NONE:
+            logger.info(f"{e2} bonus activated")
+            removed = self._trigger_bonus((e2.y, e2.x))
+            return True, removed, []
+
         if not self._any_matches_after({a, b}):
             # откат
             self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
@@ -204,34 +216,30 @@ class Board:
 
         return matches
 
-    def _activate_bonus(self, pos: tuple[int, int], bonus: Bonus) -> tuple[bool, Set[tuple[int, int]]]:
-        """Сработал бонус в pos: сразу убираем нужные клетки."""
-        r0, c0 = pos
-        removed: Set[tuple[int, int]] = set()
+    def _trigger_bonus(self, cell: Tuple[int, int]) -> Set[Tuple[int, int]]:
+        """Взрыв бомбы или ракеты. Удаляем все клетки, попавшие в зону."""
+        r, c = cell
+        elem = self.grid[r][c]
+        removed = set()
 
-        if bonus == Bonus.BOMB:
-            # 3×3 вокруг
+        if elem.bonus == Bonus.BOMB:
             for dr in (-1, 0, 1):
                 for dc in (-1, 0, 1):
-                    r, c = r0 + dr, c0 + dc
-                    if 0 <= r < self.ROWS and 0 <= c < self.COLS:
-                        removed.add((r, c))
+                    rr, cc = r + dr, c + dc
+                    if 0 <= rr < self.ROWS and 0 <= cc < self.COLS:
+                        removed.add((rr, cc))
 
-        elif bonus == Bonus.ROCKET_H:
-            # весь ряд r0
-            for c in range(self.COLS):
-                removed.add((r0, c))
+        elif elem.bonus == Bonus.ROCKET_H:
+            removed = {(r, cc) for cc in range(0, c)}
 
-        elif bonus == Bonus.ROCKET_V:
-            # весь столбец c0
-            for r in range(self.ROWS):
-                removed.add((r, c0))
+        elif elem.bonus == Bonus.ROCKET_V:
+            removed = {(rr, c) for rr in range(0, r)}
 
-        # удаляем бонусную ячейку и всё вокруг
-        for r, c in removed:
-            self.grid[r][c] = None
+        removed.add((r, c))
+        for rr, cc in removed:
+            self.grid[rr][cc] = None
 
-        return True, removed
+        return removed
 
     def collapse_and_fill(self) -> tuple[list[tuple[Element, int, int]], list[Element]]:
         """
@@ -272,13 +280,6 @@ class Board:
         print(self)
         return fallen, spawned
 
-    def _fill_columns(self):
-        for col in range(self.COLS):
-            for row in range(self.ROWS):
-                if self.grid[row][col] is None:
-                    new = Element(row, col, random.choice(self.COLORS))
-                    self.grid[row][col] = new
-
     # ---------------------------------------------------------- вспомогательное
     def _will_match(self, a, b) -> bool:
         (r1, c1), (r2, c2) = a, b
@@ -307,3 +308,71 @@ class Board:
                     row_str += symbol
             rows.append(row_str)
         return '\n'.join(rows)
+
+    def step(self):
+        matched = self._collect_matches()
+        return True if len(matched) >= 1 else False
+
+    def get_auto_matched(self) -> Tuple[Set[Tuple[int, int]], List[Tuple[int, int, Bonus]]]:
+        matched = self._collect_matches()
+        bonus_cells = self._create_bonuses_auto(matched)
+        to_remove = matched - set((r, c) for r, c, _ in bonus_cells)
+        for r, c in to_remove:
+            self.grid[r][c] = None
+
+        return matched, bonus_cells
+
+    def _create_bonuses_auto(self, matched: Set[Tuple[int, int]]
+                             ) -> List[Tuple[int, int, Bonus]]:
+        """
+        Создание бонусов для АВТО-волны -- без опоры на a/b.
+        Сохраняем список в self._last_auto_bonuses,
+        чтобы потом его забрали get_auto_matched().
+        """
+        bonuses: List[Tuple[int, int, Bonus]] = []
+
+        def place_bonus(run: List[Tuple[int, int]]):
+            n = len(run)
+            if n < 4:
+                return
+            r, c = random.choice(run)  # случайная клетка линии
+            base = self.grid[r][c]
+            if n == 4:
+                bonus = random.choice([Bonus.ROCKET_H, Bonus.ROCKET_V])
+            else:  # n ≥ 5
+                bonus = Bonus.BOMB
+            self.grid[r][c] = Element(r, c, base.color, bonus)
+            bonuses.append((r, c, bonus))
+
+        # горизонтальные последовательности
+        for r in range(self.ROWS):
+            run = []
+            for c in range(self.COLS):
+                if (r, c) in matched:
+                    if not run or self.grid[r][c].color == self.grid[r][run[-1]].color:
+                        run.append(c)
+                    else:
+                        place_bonus([(r, x) for x in run]);
+                        run = [c]
+                else:
+                    place_bonus([(r, x) for x in run]);
+                    run = []
+            place_bonus([(r, x) for x in run])
+
+        # вертикальные
+        for c in range(self.COLS):
+            run = []
+            for r in range(self.ROWS):
+                if (r, c) in matched:
+                    if not run or self.grid[r][c].color == self.grid[run[-1]][c].color:
+                        run.append(r)
+                    else:
+                        place_bonus([(x, c) for x in run]);
+                        run = [r]
+                else:
+                    place_bonus([(x, c) for x in run]);
+                    run = []
+            place_bonus([(x, c) for x in run])
+
+        self._last_auto_bonuses = bonuses  # запоминаем для get_auto_matched
+        return bonuses
