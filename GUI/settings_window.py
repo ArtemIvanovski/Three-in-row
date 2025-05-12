@@ -4,7 +4,10 @@ from PyQt5.QtWidgets import (
     QDialog, QLabel, QPushButton
 )
 
+from core.audio_manager import AudioManager
 from core.setting_deploy import get_resource_path
+
+audio = AudioManager.instance()
 
 
 class SettingsWindow(QDialog):
@@ -80,15 +83,21 @@ class SettingsWindow(QDialog):
         return btn
 
     def _toggle_sound(self):
-        self.sound_on = not self.sound_on
-        self.sound_btn._off.setVisible(not self.sound_on)
+        audio = AudioManager.instance()
+        audio.toggle_sound(not audio.sound_on)
+        # покажем иконку «выкл.», если звук выключен
+        self.sound_btn._off.setVisible(not audio.sound_on)
 
     def _toggle_music(self):
-        self.music_on = not self.music_on
-        self.music_btn._off.setVisible(not self.music_on)
+        audio = AudioManager.instance()
+        audio.toggle_music(not audio.music_on)
+        self.music_btn._off.setVisible(not audio.music_on)
 
     def showEvent(self, e):
         super().showEvent(e)
+        audio = AudioManager.instance()
+        self.sound_btn._off.setVisible(not audio.sound_on)
+        self.music_btn._off.setVisible(not audio.music_on)
 
         fade = QPropertyAnimation(self, b"windowOpacity", self)
         fade.setDuration(250)

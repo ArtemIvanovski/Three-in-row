@@ -1,6 +1,7 @@
 import sys
 from PyQt5.QtWidgets import QApplication
 from GUI.main_window import MainWindow
+from core.audio_manager import AudioManager
 from logger import logger
 
 
@@ -10,6 +11,8 @@ def main():
     multiprocessing.set_start_method('spawn')
 
     try:
+        audio = AudioManager.instance()
+        audio.switch_to_lobby()
         app = QApplication(sys.argv)
         window = MainWindow()
         window.show()

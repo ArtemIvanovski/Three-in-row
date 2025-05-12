@@ -4,10 +4,12 @@ from PyQt5.QtWidgets import QPushButton, QLabel, QWidget
 
 from GUI.create_game_window import CreateGameWindow
 from GUI.game_window import GameWindow
-from GUI.join_game_window import JoinGameWindow
 from GUI.settings_window import SettingsWindow
+from core.audio_manager import AudioManager
 from core.setting_deploy import get_resource_path
 from logger import logger
+
+audio = AudioManager.instance()
 
 
 class MainWindow(QWidget):
@@ -15,6 +17,7 @@ class MainWindow(QWidget):
 
     def __init__(self):
         super().__init__()
+
         self.setWindowTitle("Three in row")
         self.setFixedSize(self.WIDTH, self.HEIGHT)
         self.setWindowIcon(QIcon(get_resource_path("assets/icon.png")))
@@ -95,6 +98,7 @@ class MainWindow(QWidget):
         create_game_window.exec_()
 
     def _join_game(self):
+        audio.switch_to_game()
         logger.info("Присоединение к игре")
         # join_game_window = JoinGameWindow(self)
         # join_game_window.move(self.x() + (self.width() - join_game_window.width()) // 2,

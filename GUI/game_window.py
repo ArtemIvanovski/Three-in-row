@@ -11,10 +11,13 @@ from GUI.end_game_window import EndGameWindow
 from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
+from core.audio_manager import AudioManager
 from core.board import Board
 from core.enums import Bonus, Color
 from core.setting_deploy import get_resource_path
 from logger import logger
+
+audio = AudioManager.instance()
 
 
 class GameWindow(QMainWindow):
@@ -174,6 +177,7 @@ class GameWindow(QMainWindow):
     def handle_swap_request(self, a_lbl: TileLabel, b_lbl: TileLabel):
         if abs(a_lbl.row - b_lbl.row) + abs(a_lbl.col - b_lbl.col) != 1:
             return
+        audio.play_sound("swap")
         self._animate_swap(a_lbl, b_lbl,
                            lambda: self._after_swap_logic(a_lbl, b_lbl))
 
@@ -187,6 +191,7 @@ class GameWindow(QMainWindow):
             self._animate_swap(a_lbl, b_lbl, on_finished=None)
             return
 
+        audio.play_sound("nice_swap")
         if not bonuses and removed:
             self._update_score(len(removed))
             for r, c in removed:
@@ -203,6 +208,10 @@ class GameWindow(QMainWindow):
 
                     explosion.raise_()
                     explosion.show()
+                    if lbl.element.bonus == Bonus.BOMB:
+                        audio.play_sound("boom")
+                    else:
+                        audio.play_sound("removed")
             self._update_game()
             return
 
@@ -218,6 +227,7 @@ class GameWindow(QMainWindow):
 
             explosion.raise_()
             explosion.show()
+            audio.play_sound("removed")
 
         print(bonuses)
         for r, c, bonus in bonuses:
@@ -231,6 +241,7 @@ class GameWindow(QMainWindow):
             lbl.raise_()
             lbl.show()
             self.tile_labels[(r, c)] = lbl
+            audio.play_sound("add_bonus")
 
         self._update_game()
 
@@ -248,6 +259,7 @@ class GameWindow(QMainWindow):
                     self.tile_labels.pop((elem.y, elem.x), None)  # до смены координат
                     self.tile_labels[(new_r, new_c)] = lbl
                     self._animate_fall(lbl, new_r)
+                    audio.play_sound("falling")
                     break
         self.print_matrix()
         print(f"spawned^ {spawned}")
@@ -267,6 +279,7 @@ class GameWindow(QMainWindow):
 
             self.tile_labels[(elem.x, elem.y)] = lbl
             self._animate_fall(lbl, elem.x)
+            audio.play_sound("falling")
 
         self.print_matrix()
 
@@ -284,6 +297,7 @@ class GameWindow(QMainWindow):
 
                 explosion.raise_()
                 explosion.show()
+                audio.play_sound("removed")
 
             print(bonuses)
             # --- 2. Появление бонусных плиток ---
@@ -298,6 +312,7 @@ class GameWindow(QMainWindow):
                 lbl.raise_()
                 lbl.show()
                 self.tile_labels[(r, c)] = lbl
+                audio.play_sound("add_bonus")
 
             fallen, spawned = self.board.collapse_and_fill()
             print(f"fallen^ {fallen}")
@@ -309,6 +324,7 @@ class GameWindow(QMainWindow):
                         self.tile_labels.pop((elem.y, elem.x), None)  # до смены координат
                         self.tile_labels[(new_r, new_c)] = lbl
                         self._animate_fall(lbl, new_r)
+                        audio.play_sound("falling")
                         break
             self.print_matrix()
             print(f"spawned^ {spawned}")
@@ -328,6 +344,7 @@ class GameWindow(QMainWindow):
 
                 self.tile_labels[(elem.x, elem.y)] = lbl
                 self._animate_fall(lbl, elem.x)
+                audio.play_sound("falling")
             self.print_matrix()
 
     def _animate_swap(self, t1: TileLabel, t2: TileLabel, on_finished=None):
@@ -373,6 +390,7 @@ class GameWindow(QMainWindow):
                 elem = self.board.cell(r, c)
                 pix = self._pix_for_elem(elem)
                 lbl = TileLabel(self, elem)
+                audio.play_sound("falling", 1)
                 lbl.setPixmap(pix)
                 x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
                 y = self.GRID_ORIGIN.y() + (-1 if first else r) * self.CELL_SIZE
@@ -431,6 +449,7 @@ class GameWindow(QMainWindow):
         else:
             # летим вниз до низа поля
             end_y = self.GRID_ORIGIN.y()
+            audio.play_sound("rocket")
             anim.setStartValue(QPoint(start_x, start_y))
             anim.setEndValue(QPoint(start_x, end_y))
 
@@ -496,7 +515,7 @@ class GameWindow(QMainWindow):
 
     def _tick_clock(self):
         self.elapsed_seconds += 1
-        if self.elapsed_seconds >= 10:
+        if self.elapsed_seconds >= 999:
             self._show_end_game("Время вышло", winner_name="перчик")
         self.display_number('timer', self.elapsed_seconds)
 

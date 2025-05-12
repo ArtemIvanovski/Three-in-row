@@ -5,11 +5,13 @@ from PyQt5.QtWidgets import (
     QGraphicsColorizeEffect
 )
 
+from core.audio_manager import AudioManager
 from core.element import Element
+
+audio = AudioManager.instance()
 
 
 class TileLabel(QLabel):
-
     HIGHLIGHT_MS = 1000
 
     def __init__(self, parent, element: Element):
@@ -33,6 +35,7 @@ class TileLabel(QLabel):
         anim.start(QPropertyAnimation.DeleteWhenStopped)
 
     def mousePressEvent(self, e):
+        audio.play_sound("click")
         self._drag_origin = e.pos()
         self._dragging = False
         self.parent().selected_tile = self
