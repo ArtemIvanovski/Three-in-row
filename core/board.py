@@ -36,13 +36,11 @@ class Board:
         """
         r1, c1 = a
         r2, c2 = b
-        print(a, b)
         self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
         e1 = self.grid[r1][c1]
         e2 = self.grid[r2][c2]
         e1.x, e1.y = c1, r1
         e2.x, e2.y = c2, r2
-        print(f"e1{e1}  e2{e2}")
         if e1.bonus != Bonus.NONE:
             logger.info(f"{e1} bonus activated")
             removed = self._trigger_bonus((e1.y, e1.x))
@@ -66,8 +64,6 @@ class Board:
         to_remove = matched - set((r, c) for r, c, _ in bonus_cells)
         for r, c in to_remove:
             self.grid[r][c] = None
-        print("after swap matrix")
-        print(self)
 
         return True, matched, bonus_cells
 
@@ -277,7 +273,6 @@ class Board:
         if not self.has_move():
             e = random.choice([e for row in self.grid for e in row])
             e.color = random.choice([c for c in self.COLORS if c != e.color])
-        print(self)
         return fallen, spawned
 
     # ---------------------------------------------------------- вспомогательное
@@ -376,3 +371,33 @@ class Board:
 
         self._last_auto_bonuses = bonuses  # запоминаем для get_auto_matched
         return bonuses
+
+    def board_from_matrix(self, mat: list[list[str]]):
+        for r, row in enumerate(mat):
+            for c, ch in enumerate(row):
+                # ch: 'r','o','h','v','B','.'
+                if ch == '.':
+                    self.grid[r][c] = None
+                else:
+                    # цвет по первой букве
+                    color = {
+                        'r': Color.RED, 'o': Color.ORANGE,
+                        'p': Color.PURPLE, 'y': Color.YELLOW
+                    }[ch.lower()]
+                    bonus = {
+                        'h': Bonus.ROCKET_H, 'v': Bonus.ROCKET_V,
+                        'B': Bonus.BOMB
+                    }.get(ch, Bonus.NONE)
+                    self.grid[r][c] = Element(r, c, color, bonus)
+
+    def to_matrix(self) -> list[list[str]]:
+        matrix: list[list[str]] = []
+        for row in self.grid:
+            row_chars: list[str] = []
+            for elem in row:
+                if elem is None:
+                    row_chars.append('.')
+                else:
+                    row_chars.append(elem.short())
+            matrix.append(row_chars)
+        return matrix

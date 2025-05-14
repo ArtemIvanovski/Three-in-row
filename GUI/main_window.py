@@ -3,7 +3,7 @@ from PyQt5.QtGui import QIcon, QFont, QPixmap, QFontDatabase
 from PyQt5.QtWidgets import QPushButton, QLabel, QWidget
 
 from GUI.create_game_window import CreateGameWindow
-from GUI.game_window import GameWindow
+from GUI.join_game_window import JoinGameWindow
 from GUI.settings_window import SettingsWindow
 from core.audio_manager import AudioManager
 from core.setting_deploy import get_resource_path
@@ -100,9 +100,7 @@ class MainWindow(QWidget):
     def _join_game(self):
         audio.switch_to_game()
         logger.info("Присоединение к игре")
-        # join_game_window = JoinGameWindow(self)
-        # join_game_window.move(self.x() + (self.width() - join_game_window.width()) // 2,
-        #                       self.y() + (self.height() - join_game_window.height()) // 2)
-        # join_game_window.exec_()
-        self.create_game_window = GameWindow()
-        self.create_game_window.show()
+        join_game_window = JoinGameWindow(self)
+        join_game_window.move(self.x() + (self.width() - join_game_window.width()) // 2,
+                              self.y() + (self.height() - join_game_window.height()) // 2)
+        join_game_window.exec_()

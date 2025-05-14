@@ -3,18 +3,22 @@ import threading
 from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QIcon, QFont, QFontDatabase, QPixmap
 from PyQt5.QtWidgets import (
-    QDialog, QLabel, QLineEdit, QPushButton, QSpinBox, QComboBox, QListWidget
+    QDialog, QLabel, QLineEdit, QPushButton
 )
 
+from GUI.game_window import GameWindow
+from core.audio_manager import AudioManager
 from core.client import Client
-from core.server import Server
 from core.setting_deploy import get_resource_path
 from logger import logger
+
+audio = AudioManager.instance()
 
 
 class JoinGameWindow(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.client = None
         self.server = None
         self.stop_event = threading.Event()
@@ -146,11 +150,12 @@ class JoinGameWindow(QDialog):
         self.status_label.setStyleSheet("font-size: 14px; color: blue; font-weight: bold;")
         self.status_label.setVisible(True)
 
-    def start_game(self, players_number: int):
-        # self.client.gui = GameWindow(num_players=players_number, main_window=self.main_window)
-        # self.client.gui.ctrl = self.client.ctrl
-        # self.client.gui.apply_state("start_game")
-        # self.client.gui.show()
+    def start_game(self):
+        audio.switch_to_game()
+        self.client.gui = GameWindow(main_window=self.main_window)
+        self.client.gui.ctrl = self.client.ctrl
+        self.client.gui.apply_state("start_game")
+        self.client.gui.show()
         logger.info("Game start")
         self.accept()
 

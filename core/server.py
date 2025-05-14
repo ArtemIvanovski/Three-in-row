@@ -4,6 +4,7 @@ import threading
 
 from PyQt5.QtCore import QObject, pyqtSignal, Qt
 
+from core.game_controller import GameController
 # from core.game_controller import GameController
 from core.network_utils import get_local_ip
 from logger import logger
@@ -12,21 +13,24 @@ from logger import logger
 class Server(QObject):
     gui_cmd = pyqtSignal(str)
 
-    def __init__(self, nickname=None):
+    def __init__(self, nickname=None, mode=None, time=999):
         super().__init__()
         self.gui = None
+        self.time = time
+        self.mode = mode
         self.nickname = nickname
         self.game_started = False
-        # self.ctrl = GameController(
-        #     value_player=value_players,
-        #     nickname=nickname,
-        #     is_client=False,
-        #     on_send=self._broadcast,
-        #     on_close=self.shutdown
-        # )
-        #
-        # self.ctrl.state_ready = self.gui_cmd.emit
-        # self.gui_cmd.connect(self._apply_state, Qt.QueuedConnection)
+        self.ctrl = GameController(
+            mode=self.mode,
+            time=self.time,
+            nickname=nickname,
+            is_client=False,
+            on_send=self._broadcast,
+            on_close=self.shutdown
+        )
+
+        self.ctrl.state_ready = self.gui_cmd.emit
+        self.gui_cmd.connect(self._apply_state, Qt.QueuedConnection)
         self.game_started = False
         self.host = get_local_ip()
         # self.port = get_free_port()
@@ -83,7 +87,7 @@ class Server(QObject):
                 self.broadcasting = False
 
             while True:
-                raw = client_socket.recv(8192)
+                raw = client_socket.recv(32768)
                 if not raw:
                     break
                 try:

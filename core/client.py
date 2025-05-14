@@ -4,6 +4,7 @@ import threading
 
 from PyQt5.QtCore import QObject, pyqtSignal, Qt
 
+from core.game_controller import GameController
 from core.network_utils import find_server_by_port
 from logger import logger
 
@@ -18,16 +19,17 @@ class Client(QObject):
         self.join_window = join_window
         self.nickname = nickname
 
-        # self.ctrl = GameController(
-        #     value_player=0,
-        #     nickname=nickname,
-        #     on_send=self._send_to_srv,
-        #     on_close=self.close
-        # )
-        #
-        # self.gui_requested.connect(self.join_window.start_game)
-        # self.ctrl.state_ready = self.gui_cmd.emit
-        # self.gui_cmd.connect(self._apply_state, Qt.QueuedConnection)
+        self.ctrl = GameController(
+            mode="",
+            time=0,
+            nickname=nickname,
+            on_send=self._send_to_srv,
+            on_close=self.close
+        )
+
+        self.gui_requested.connect(self.join_window.start_game)
+        self.ctrl.state_ready = self.gui_cmd.emit
+        self.gui_cmd.connect(self._apply_state, Qt.QueuedConnection)
 
         self.server_ip, self.server_port = find_server_by_port(int(session_code))
         if not self.server_ip:
@@ -55,7 +57,7 @@ class Client(QObject):
     def _recv_loop(self):
         while True:
             try:
-                raw = self.sock.recv(8192)
+                raw = self.sock.recv(32768)
                 if not raw:
                     self.ctrl.handle_error()
                     break
@@ -66,7 +68,7 @@ class Client(QObject):
 
             try:
                 data = json.loads(raw.decode("utf-8"))
-                logger.info(f"Команда {data}")
+                logger.info(f"Принята команда {data}")
             except Exception:
                 continue
 

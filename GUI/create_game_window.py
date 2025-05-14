@@ -1,20 +1,24 @@
-import random
 import threading
 
-from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup
+from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QIcon, QFont, QFontDatabase, QPixmap
 from PyQt5.QtWidgets import (
-    QDialog, QLabel, QLineEdit, QPushButton, QFrame, QSpinBox, QComboBox, QListWidget
+    QDialog, QLabel, QLineEdit, QPushButton, QSpinBox, QComboBox, QListWidget
 )
 
+from GUI.game_window import GameWindow
+from core.audio_manager import AudioManager
 from core.server import Server
 from core.setting_deploy import get_resource_path
 from logger import logger
+
+audio = AudioManager.instance()
 
 
 class CreateGameWindow(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.main_window = parent
         self.server = None
         self.stop_event = threading.Event()
         self.selected_mode = None
@@ -157,7 +161,8 @@ class CreateGameWindow(QDialog):
 
     def _on_generate(self):
         self.spin_time.setDisabled(True)
-        self.server = Server(nickname=self.nick_edit.text())
+        self.server = Server(nickname=self.nick_edit.text(), mode=self.selected_mode,
+                             time=self.spin_time.value() if self.selected_mode == "time" else 999)
         self.lbl_code.setText(f"Код доступа {self.server.session_code}")
         self.btn_generate.setVisible(False)
         self.players_list.show()
@@ -180,15 +185,19 @@ class CreateGameWindow(QDialog):
                 self.btn_start.hide()
             self.stop_event.wait(1)
 
-    def closeEvent(self, e):
-        # стопим потоки и сервер
-        self.stop_event.set()
-        if hasattr(self, "server") and self.server:
+    def closeEvent(self, event):
+        if self.server:
             self.server.shutdown(None, None)
         self.reject()
 
     def _on_start(self):
+        audio.switch_to_game()
         logger.info("Начинаем игру")
+        self.server.gui = GameWindow(main_window=self.main_window)
+        self.server.gui.show()
+        self.server.gui.ctrl = self.server.ctrl
+        self.server.ctrl.new_game([self.server.nickname, *self.server.clients])
+        self.accept()
         self.accept()
 
     def _animate_show(self):

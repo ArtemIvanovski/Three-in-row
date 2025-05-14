@@ -15,7 +15,7 @@ class AudioManager:
     def __init__(self):
         # музыка
         pygame.mixer.music.load(get_resource_path("assets/music/lobby.wav"))
-        pygame.mixer.music.set_volume(0.2)
+        pygame.mixer.music.set_volume(0)
         pygame.mixer.music.play(-1)  # зацикливание
 
         self.music_on = True
