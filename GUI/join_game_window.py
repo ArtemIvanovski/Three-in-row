@@ -29,12 +29,10 @@ class JoinGameWindow(QDialog):
         self.setModal(True)
         self.setFixedSize(400, 500)
 
-        # шрифт
         fid = QFontDatabase.addApplicationFont(get_resource_path("assets/FontFont.otf"))
         fams = QFontDatabase.applicationFontFamilies(fid)
         self.font = fams[0] if fams else self.font().family()
 
-        # фон
         bg = QLabel(self)
         bg.setStyleSheet(
             "background: rgb(255,204,141);"
@@ -44,7 +42,6 @@ class JoinGameWindow(QDialog):
         bg.setGeometry(20, 40, 360, 460)
         bg.lower()
 
-        # заголовок
         pic = QLabel(self)
         p = QPixmap(get_resource_path("assets/setting_title.png")) \
             .scaled(300, 100, Qt.KeepAspectRatio, Qt.SmoothTransformation)
@@ -103,8 +100,6 @@ class JoinGameWindow(QDialog):
         self.status_label.setFont(QFont(self.font, 14))
         self.status_label.setGeometry(50, 340, 300, 80)
         self.status_label.setVisible(False)
-
-        # show animation
         self._animate_show()
 
     def _on_nick_changed(self, text):

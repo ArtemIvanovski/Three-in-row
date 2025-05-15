@@ -47,11 +47,8 @@ class Board:
             self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
             return False, set(), []
 
-        # первая волна
         matched = self._collect_matches()
-        # создаём все бонусы и получаем список клеток, где они появились
         bonus_cells = self._create_bonuses(matched, a, b)
-        # удаляем всё, кроме бонусов
         to_remove = matched - set((r, c) for r, c, _ in bonus_cells)
         for r, c in to_remove:
             self.grid[r][c] = None
@@ -63,23 +60,15 @@ class Board:
                         a: Tuple[int, int],
                         b: Tuple[int, int]
                         ) -> List[Tuple[int, int, Bonus]]:
-        """
-        matched — полный сет координат первой волны,
-        a, b — только что переставленные плитки.
-        Возвращает список (r,c,bonus), не изменяя matched.
-        """
         bonuses = []
         used = set()
 
-        # вспомог: обработать один run (список координат одного ряда/столбца)
         def make_bonus(run: List[Tuple[int, int]]):
             size = len(run)
             if size < 4:
                 return
-            # выбираем target
             target = next((cell for cell in (a, b) if cell in run), None)
             if target is None:
-                # центр руна
                 target = run[size // 2]
             r, c = target
             base = self.grid[r][c]
@@ -88,12 +77,10 @@ class Board:
                 bonus = random.choice([Bonus.ROCKET_H, Bonus.ROCKET_V])
             else:
                 bonus = Bonus.BOMB
-            # ставим
             self.grid[r][c] = Element(r, c, col, bonus)
             bonuses.append((r, c, bonus))
             used.update(run)
 
-        # 1) горизонтальные руны
         for r in range(self.ROWS):
             run: List[Tuple[int, int]] = []
             prev_color = None
@@ -108,7 +95,6 @@ class Board:
                 prev_color = elem.color if elem else None
             make_bonus(run)
 
-        # 2) вертикальные руны
         for c in range(self.COLS):
             run = []
             prev_color = None
@@ -168,7 +154,6 @@ class Board:
 
     def _collect_matches(self) -> set[tuple[int, int]]:
         matches = set()
-        # горизонтали
         for r in range(self.ROWS):
             run = []
             for c in range(self.COLS):
@@ -182,7 +167,6 @@ class Board:
             if len(run) >= 3:
                 matches.update({(r, x) for x in range(self.COLS - len(run), self.COLS)})
 
-        # вертикали
         for c in range(self.COLS):
             run = []
             for r in range(self.ROWS):
@@ -199,7 +183,6 @@ class Board:
         return matches
 
     def _trigger_bonus(self, cell: Tuple[int, int]) -> Set[Tuple[int, int]]:
-        """Взрыв бомбы или ракеты. Удаляем все клетки, попавшие в зону."""
         r, c = cell
         elem = self.grid[r][c]
         removed = set()
@@ -224,15 +207,8 @@ class Board:
         return removed
 
     def collapse_and_fill(self) -> tuple[list[tuple[Element, int, int]], list[Element]]:
-        """
-        Запускает гравитацию и досыпание.
-        Возвращает:
-          fallen   – список (elem, new_r, new_c) для старых элементов,
-          spawned  – элементы, которые добавлены сверху
-        """
         fallen: list[tuple[Element, int, int]] = []
 
-        # ---------- гравитация ----------
         for c in range(self.COLS):
             write = self.ROWS - 1
             for read in range(self.ROWS - 1, -1, -1):
@@ -245,7 +221,6 @@ class Board:
                         fallen.append((e, write, c))
                     write -= 1
 
-        # ---------- досыпаем ----------
         spawned: list[Element] = []
         for c in range(self.COLS):
             for r in range(self.ROWS):
@@ -254,14 +229,11 @@ class Board:
                     self.grid[r][c] = new
                     spawned.append(new)
 
-        # гарантия «есть ход» – если полe получилось без ходов,
-        # просто меняем цвет одного случайного элемента
         if not self.has_move():
             e = random.choice([e for row in self.grid for e in row])
             e.color = random.choice([c for c in self.COLORS if c != e.color])
         return fallen, spawned
 
-    # ---------------------------------------------------------- вспомогательное
     def _will_match(self, a, b) -> bool:
         (r1, c1), (r2, c2) = a, b
         g = self.grid
@@ -305,18 +277,13 @@ class Board:
 
     def _create_bonuses_auto(self, matched: Set[Tuple[int, int]]
                              ) -> List[Tuple[int, int, Bonus]]:
-        """
-        Создание бонусов для АВТО-волны -- без опоры на a/b.
-        Сохраняем список в self._last_auto_bonuses,
-        чтобы потом его забрали get_auto_matched().
-        """
         bonuses: List[Tuple[int, int, Bonus]] = []
 
         def place_bonus(run: List[Tuple[int, int]]):
             n = len(run)
             if n < 4:
                 return
-            r, c = random.choice(run)  # случайная клетка линии
+            r, c = random.choice(run)
             base = self.grid[r][c]
             if n == 4:
                 bonus = random.choice([Bonus.ROCKET_H, Bonus.ROCKET_V])
@@ -340,7 +307,6 @@ class Board:
                     run = []
             place_bonus([(r, x) for x in run])
 
-        # вертикальные
         for c in range(self.COLS):
             run = []
             for r in range(self.ROWS):

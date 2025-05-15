@@ -134,7 +134,6 @@ class CreateGameWindow(QDialog):
         self.btn_start.clicked.connect(self._on_start)
         self.btn_start.hide()
 
-        # show animation
         self._animate_show()
 
     def _on_nick_changed(self, text):

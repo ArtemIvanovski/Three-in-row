@@ -85,7 +85,6 @@ class SettingsWindow(QDialog):
     def _toggle_sound(self):
         audio = AudioManager.instance()
         audio.toggle_sound(not audio.sound_on)
-        # покажем иконку «выкл.», если звук выключен
         self.sound_btn._off.setVisible(not audio.sound_on)
 
     def _toggle_music(self):

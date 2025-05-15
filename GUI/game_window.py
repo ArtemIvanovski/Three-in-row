@@ -330,7 +330,6 @@ class GameWindow(QWidget):
                 explosion.show()
                 audio.play_sound("removed")
 
-            # --- 2. Появление бонусных плиток ---
             for r, c, bonus in bonuses:
                 elem = self.board.cell(r, c)
                 lbl = TileLabel(self, elem)
@@ -397,12 +396,14 @@ class GameWindow(QWidget):
             group.addAnimation(anim)
 
         self.pending_animations += 1
+
         def _after_anim():
             self._swap_tiles(t1, t2)
             if on_finished:
                 on_finished()
             self.pending_animations -= 1
             self._check_animations_done()
+
         group.finished.connect(_after_anim)
         group.start()
         self.animations.append(group)
@@ -779,7 +780,6 @@ class GameWindow(QWidget):
             explosion.show()
             audio.play_sound("removed")
 
-        # --- 2. Появление бонусных плиток ---
         for r, c, bonus in bonuses:
             elem = self.board.cell(r, c)
             lbl = TileLabel(self, elem)
@@ -842,14 +842,10 @@ class GameWindow(QWidget):
     def _check_animations_done(self):
         if self.pending_animations == 0 and self._on_all_animations:
             cb = self._on_all_animations
-            self._on_all_animations = None  # вызов только один раз
+            self._on_all_animations = None
             cb()
 
     def run_after_animations(self, callback):
-        """
-        Если есть запущенные анимации — зарегистрируем callback.
-        Иначе — вызовем сразу.
-        """
         if self.pending_animations > 0:
             self._on_all_animations = callback
         else:
