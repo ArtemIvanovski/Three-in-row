@@ -112,17 +112,19 @@ def time(time_: int) -> Dict[str, Any]:
 
 
 def auto_swap_circle(
-        fallen: List[Tuple[Element, int, int]],
+        fallen: List[Tuple[int, int, int, int]],
         spawned: List[Element],
+        removed: Set[Tuple[int, int]],
         bonuses: List[Tuple[int, int, Bonus]],
-        board: List[List[str]]
+        board_: List[List[str]]
 ) -> Dict[str, Any]:
     return {
-        "command": "auto_swap",
+        "command": "auto_swap_circle",
         "fallen": [
-            {**_elem_to_dict(e), "new_r": r, "new_c": c}
-            for e, r, c in fallen
+            {"old_r": o_r, "old_c": o_c, "new_r": n_r, "new_c": n_c}
+            for o_r, o_c, n_r, n_c in fallen
         ],
+        "removed": [[r, c] for (r, c) in sorted(removed)],
         "spawned": [
             _elem_to_dict(e) for e in spawned
         ],
@@ -130,7 +132,7 @@ def auto_swap_circle(
             {"r": r, "c": c, "bonus": bonus.name}
             for (r, c, bonus) in bonuses
         ],
-        "board": board,
+        "board": board_,
     }
 
 

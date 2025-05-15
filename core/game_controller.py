@@ -99,12 +99,21 @@ class GameController:
                                               board=self.board.to_matrix())))
 
     def auto_swap(self, fallen: list[tuple[int, int, int, int]], spawned: list[Element]):
-        self.is_my_step = self.my_nickname == self.current
         if self.mode == "time":
             self.is_my_step = True
         if self._send:
             self._send(proto.dumps(proto.auto_swap(fallen=fallen, spawned=spawned,
                                                    board=self.board.to_matrix())))
+
+    def auto_swap_circle(self, fallen: list[Tuple[int, int, int, int]],
+                         spawned: List[Element],
+                         removed: Set[Tuple[int, int]],
+                         bonuses: List[Tuple[int, int, Bonus]]):
+        if self.mode == "time":
+            self.is_my_step = True
+        if self._send:
+            self._send(proto.dumps(proto.auto_swap_circle(fallen=fallen, spawned=spawned,
+                                                          board_=self.board.to_matrix(), bonuses=bonuses, removed=removed)))
 
     def handle_command(self, data):
         if data["command"] == "start_game":
@@ -124,6 +133,8 @@ class GameController:
             self.handle_time(data)
         elif data["command"] == "finish":
             self.handle_finish(data)
+        elif data["command"] == "auto_swap_circle":
+            self.handle_auto_swap_circle(data)
         elif data["command"] == "end_game":
             self.end_game(data)
 
@@ -154,15 +165,16 @@ class GameController:
         self._dispatch("auto_swap")
 
     def handle_auto_swap_circle(self, data):
-        self.fallen = []
-        for item in data["fallen"]:
-            e = Element(item["x"], item["y"], Color(item["color"]), Bonus[item["bonus"]])
-            self.fallen.append((e, item["new_r"], item["new_c"]))
+        self.fallen = [
+            (f["old_r"], f["old_c"], f["new_r"], f["new_c"])
+            for f in data["fallen"]
+        ]
         self.spawned = [
             Element(d["x"], d["y"], Color(d["color"]), Bonus[d["bonus"]])
             for d in data["spawned"]
         ]
-        self.current = data.get("next_player")
+        self.new_board = data.get("board")
+        self.bonuses = data.get("bonuses")
         self.is_my_step = self.my_nickname == self.current
         if self.mode == "time":
             self.is_my_step = True

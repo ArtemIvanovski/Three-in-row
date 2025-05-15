@@ -49,12 +49,14 @@ class GameWindow(QWidget):
         self.solo_game = solo
         print(self.solo_game)
         self.end_game_window = None
+        self.pending_animations = 0
+        self._on_all_animations = None
         self.waiting_overlay = None
         self.opp_view = None
         self.old_b = None
         self.old_a = None
         self.main_window = main_window
-        # self.main_window.hide()
+        self.main_window.hide()
         self.ctrl = ctrl
         self.board = None
         self.animations = []
@@ -180,9 +182,11 @@ class GameWindow(QWidget):
         anim.setEndValue(end)
         anim.setDuration(dur)
         anim.setEasingCurve(QEasingCurve.OutBounce)
-
+        self.pending_animations += 1
         if finished:
             anim.finished.connect(finished)
+            self.pending_animations -= 1
+            self._check_animations_done()
         anim.start()
         self.animations.append(anim)
 
@@ -341,6 +345,17 @@ class GameWindow(QWidget):
                 audio.play_sound("add_bonus")
 
             fallen, spawned = self.board.collapse_and_fill()
+            fallen_to_send: list[Tuple[int, int, int, int]] = []
+
+            for elem, new_r, new_c in fallen:
+                for lbl in self.tile_labels.values():
+                    if lbl.element is elem:
+                        fallen_to_send.append((lbl.row, lbl.col, new_r, new_c))
+                        break
+
+            if not self.solo_game:
+                if self.ctrl.mode == "chess":
+                    self.ctrl.auto_swap_circle(fallen=fallen_to_send, spawned=spawned, bonuses=bonuses, removed=removed)
 
             for elem, new_r, new_c in fallen:
                 for lbl in self.tile_labels.values():
@@ -381,11 +396,13 @@ class GameWindow(QWidget):
             anim.setEasingCurve(QEasingCurve.InOutQuad)
             group.addAnimation(anim)
 
+        self.pending_animations += 1
         def _after_anim():
             self._swap_tiles(t1, t2)
             if on_finished:
                 on_finished()
-
+            self.pending_animations -= 1
+            self._check_animations_done()
         group.finished.connect(_after_anim)
         group.start()
         self.animations.append(group)
@@ -438,7 +455,6 @@ class GameWindow(QWidget):
         self.tile_labels[(tile2.row, tile2.col)] = tile2
 
     def _fire_rocket(self, r: int, c: int, orientation: Bonus):
-        # 1) создаём QLabel для ракеты
         rocket_img = "rocket_h.png" if orientation == Bonus.ROCKET_H else "rocket_v.png"
         rocket_lbl = QLabel(self)
         pix = QPixmap(get_resource_path(f"assets/elements/{rocket_img}")) \
@@ -451,30 +467,28 @@ class GameWindow(QWidget):
         rocket_lbl.raise_()
 
         anim = QPropertyAnimation(rocket_lbl, b"pos", self)
-        anim.setDuration(100)  # время полёта
+        anim.setDuration(100)
         anim.setEasingCurve(QEasingCurve.InQuad)
         if orientation == Bonus.ROCKET_H:
             end_x = self.GRID_ORIGIN.x()
             anim.setStartValue(QPoint(start_x, start_y))
             anim.setEndValue(QPoint(end_x, start_y))
         else:
-            # летим вниз до низа поля
             end_y = self.GRID_ORIGIN.y()
             audio.play_sound("rocket")
             anim.setStartValue(QPoint(start_x, start_y))
             anim.setEndValue(QPoint(start_x, end_y))
 
-        # 3) по окончании полёта – взрыв
         def _on_rocket_done():
             rocket_lbl.deleteLater()
-            # создаём ExplosionLabel точно в точке конца полёта
+
             explosion = ExplosionLabel(
                 parent=self,
                 color=Color.RED.value,
                 pos=rocket_lbl.pos(),
                 size=self.CELL_SIZE,
                 fps=100,
-                bonus=Bonus.NONE  # тут цвет уже неважен
+                bonus=Bonus.NONE
             )
 
         anim.finished.connect(_on_rocket_done)
@@ -598,6 +612,8 @@ class GameWindow(QWidget):
                 logger.warning(f"Не нашли соответствующие TileLabel для network step")
         elif command == "auto_swap":
             self.auto_swap()
+        elif command == "auto_swap_circle":
+            self.auto_swap_circle()
         elif command == "end_game":
             if self.waiting_overlay:
                 self.waiting_overlay.close()
@@ -741,6 +757,69 @@ class GameWindow(QWidget):
             self._animate_fall(lbl, elem.x)
             audio.play_sound("falling")
 
+        self.run_after_animations(lambda: self.render_from_board())
+
+    def auto_swap_circle(self):
+        self.ctrl.update_board()
+        self.board = self.ctrl.board
+        fallen, spawned = self.ctrl.fallen, self.ctrl.spawned
+        removed = self.ctrl.removed
+        bonuses = self.ctrl.bonuses
+
+        for r, c in removed:
+            lbl = self.tile_labels.pop((r, c), None)
+            if not lbl:
+                continue
+
+            explosion = ExplosionLabel(self, lbl.element.color.value, lbl.pos(), self.CELL_SIZE, fps=100)
+
+            lbl.deleteLater()
+
+            explosion.raise_()
+            explosion.show()
+            audio.play_sound("removed")
+
+        # --- 2. Появление бонусных плиток ---
+        for r, c, bonus in bonuses:
+            elem = self.board.cell(r, c)
+            lbl = TileLabel(self, elem)
+            pix = self._pix_for_elem(elem)
+            lbl.setPixmap(pix)
+            x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
+            y = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
+            lbl.setGeometry(x, y, self.CELL_SIZE, self.CELL_SIZE)
+            lbl.raise_()
+            lbl.show()
+            self.tile_labels[(r, c)] = lbl
+            audio.play_sound("add_bonus")
+
+        for old_r, old_c, new_r, new_c in fallen:
+            lbl = self.tile_labels.pop((old_r, old_c), None)
+            if not lbl:
+                continue
+            lbl.row, lbl.col = new_r, new_c
+            self.tile_labels[(new_r, new_c)] = lbl
+            self._animate_fall(lbl, new_r)
+            audio.play_sound("falling")
+
+        for elem in spawned:
+            lbl = TileLabel(self, elem)
+            pix = self._pix_for_elem(elem)
+            lbl.setPixmap(pix)
+
+            x = self.GRID_ORIGIN.x() + elem.y * self.CELL_SIZE
+            y = self.GRID_ORIGIN.y() - elem.x * self.CELL_SIZE
+            lbl.setGeometry(x, y,
+                            self.CELL_SIZE, self.CELL_SIZE)
+            lbl.raise_()
+            lbl.show()
+
+            self.tile_labels[(elem.x, elem.y)] = lbl
+            self._animate_fall(lbl, elem.x)
+            audio.play_sound("falling")
+
+        self.run_after_animations(lambda: self.render_from_board())
+
     def closeEvent(self, event):
         if hasattr(self, "_settings") and self._settings.isVisible():
             self._settings.close()
@@ -759,3 +838,19 @@ class GameWindow(QWidget):
             self.waiting_overlay.setGeometry(0, 0, self.width(), self.height())
         self.waiting_overlay.show()
         self.setEnabled(False)
+
+    def _check_animations_done(self):
+        if self.pending_animations == 0 and self._on_all_animations:
+            cb = self._on_all_animations
+            self._on_all_animations = None  # вызов только один раз
+            cb()
+
+    def run_after_animations(self, callback):
+        """
+        Если есть запущенные анимации — зарегистрируем callback.
+        Иначе — вызовем сразу.
+        """
+        if self.pending_animations > 0:
+            self._on_all_animations = callback
+        else:
+            callback()
