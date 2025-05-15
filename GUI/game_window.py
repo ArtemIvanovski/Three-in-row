@@ -14,6 +14,7 @@ from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
 from core.audio_manager import AudioManager
+from core.board import Board
 from core.enums import Bonus, Color
 from core.game_controller import GameController
 from core.setting_deploy import get_resource_path
@@ -43,15 +44,17 @@ class GameWindow(QWidget):
         for i in (1, 2)
     ]
 
-    def __init__(self, ctrl: GameController = None, main_window=None):
+    def __init__(self, ctrl: GameController = None, main_window=None, solo=False):
         super().__init__()
+        self.solo_game = solo
+        print(self.solo_game)
         self.end_game_window = None
         self.waiting_overlay = None
         self.opp_view = None
         self.old_b = None
         self.old_a = None
         self.main_window = main_window
-        self.main_window.hide()
+        # self.main_window.hide()
         self.ctrl = ctrl
         self.board = None
         self.animations = []
@@ -67,7 +70,9 @@ class GameWindow(QWidget):
         self._init_board_container()
         self._init_grid()
         self._init_digit_labels()
-
+        if self.solo_game:
+            self.board = Board()
+            self.render_from_board(first=True)
         self.elapsed_seconds = 0
 
         self._clock_timer = QTimer(self)
@@ -182,8 +187,11 @@ class GameWindow(QWidget):
         self.animations.append(anim)
 
     def handle_swap_request(self, a_lbl: TileLabel, b_lbl: TileLabel):
-        if self.ctrl.mode != "time" and not self.ctrl.is_my_step:
-            return
+        if self.solo_game:
+            pass
+        else:
+            if self.ctrl.mode != "time" and not self.ctrl.is_my_step:
+                return
         if abs(a_lbl.row - b_lbl.row) + abs(a_lbl.col - b_lbl.col) != 1:
             return
         audio.play_sound("swap")
@@ -196,10 +204,10 @@ class GameWindow(QWidget):
         a = (a_lbl.row, a_lbl.col)
         b = (b_lbl.row, b_lbl.col)
         success, removed, bonuses = self.board.swap(a, b)
-        logger.info(f"old a_lbl: {self.old_a}")
-        logger.info(f"old b_lbl: {self.old_b}")
-        # self.ctrl.swap(a_lbl=self.old_a, b_lbl=self.old_b, success=success,
-        #                removed=removed, bonuses=bonuses)
+        if not self.solo_game:
+            if self.ctrl.mode == "chess":
+                self.ctrl.swap(a_lbl=self.old_a, b_lbl=self.old_b, success=success,
+                               removed=removed, bonuses=bonuses)
         if not success:
             self._animate_swap(a_lbl, b_lbl, on_finished=None)
             return
@@ -267,8 +275,9 @@ class GameWindow(QWidget):
                 if lbl.element is elem:
                     fallen_to_send.append((lbl.row, lbl.col, new_r, new_c))
                     break
-
-        # self.ctrl.auto_swap(fallen=fallen_to_send, spawned=spawned)
+        if not self.solo_game:
+            if self.ctrl.mode == "chess":
+                self.ctrl.auto_swap(fallen=fallen_to_send, spawned=spawned)
 
         for elem, new_r, new_c in fallen:
             for lbl in self.tile_labels.values():
@@ -297,10 +306,10 @@ class GameWindow(QWidget):
             self.tile_labels[(elem.x, elem.y)] = lbl
             self._animate_fall(lbl, elem.x)
             audio.play_sound("falling")
-
-        if self.ctrl.mode == "time":
-            self.ctrl.board = self.board
-            self.ctrl.board_update_for_opp()
+        if not self.solo_game:
+            if self.ctrl.mode == "time":
+                self.ctrl.board = self.board
+                self.ctrl.board_update_for_opp()
 
         while self.board.step():
             removed, bonuses = self.board.get_auto_matched()
@@ -358,10 +367,10 @@ class GameWindow(QWidget):
                 self.tile_labels[(elem.x, elem.y)] = lbl
                 self._animate_fall(lbl, elem.x)
                 audio.play_sound("falling")
-
-            if self.ctrl.mode == "time":
-                self.ctrl.board = self.board
-                self.ctrl.board_update_for_opp()
+            if not self.solo_game:
+                if self.ctrl.mode == "time":
+                    self.ctrl.board = self.board
+                    self.ctrl.board_update_for_opp()
 
     def _animate_swap(self, t1: TileLabel, t2: TileLabel, on_finished=None):
         group = QParallelAnimationGroup(self)
@@ -418,19 +427,13 @@ class GameWindow(QWidget):
                     self._animate_fall(lbl, r)
 
     def _swap_tiles(self, tile1: TileLabel, tile2: TileLabel):
-        """Поменять местами объекты и их учёт в self.tile_labels."""
-        # 1) Забираем старые координаты
         r1, c1 = tile1.row, tile1.col
         r2, c2 = tile2.row, tile2.col
 
-        # 2) Меняем их в самих метках
         tile1.row, tile1.col, tile2.row, tile2.col = r2, c2, r1, c1
 
-        # 3) Меняем ключи в словаре
-        # удалим старые записи
         self.tile_labels.pop((r1, c1), None)
         self.tile_labels.pop((r2, c2), None)
-        # и запишем по новым
         self.tile_labels[(tile1.row, tile1.col)] = tile1
         self.tile_labels[(tile2.row, tile2.col)] = tile2
 
@@ -479,13 +482,14 @@ class GameWindow(QWidget):
 
     def _update_score(self, score: int):
         self.score += score
-        if self.ctrl.mode == "time":
-            self.ctrl.score_update(self.score)
-            if self.score > 999:
-                self.ctrl.finish(self.score)
-                self._clock_timer.stop()
-                self._show_waiting_overlay(f"Второй игрок еще не финишировал\n, ждём его…")
-                return
+        if not self.solo_game:
+            if self.ctrl.mode == "time":
+                self.ctrl.score_update(self.score)
+                if self.score > 999:
+                    self.ctrl.finish(self.score)
+                    self._clock_timer.stop()
+                    self._show_waiting_overlay(f"Второй игрок еще не финишировал\n, ждём его…")
+                    return
         self.display_number('score', self.score)
 
     def display_number(self, kind, value, color: str = None, x=None, y=None):
@@ -526,13 +530,15 @@ class GameWindow(QWidget):
 
     def _tick_clock(self):
         self.elapsed_seconds += 1
-        if self.ctrl.mode == "time":
-            self.ctrl.time_update(self.elapsed_seconds)
-            if self.elapsed_seconds > self.ctrl.time:
-                self.ctrl.finish(self.score)
-                self._clock_timer.stop()
-                self._show_waiting_overlay(f"Второй игрок еще не финишировал\n, ждём его…")
-                return
+
+        if not self.solo_game:
+            if self.ctrl.mode == "time":
+                self.ctrl.time_update(self.elapsed_seconds)
+                if self.elapsed_seconds > self.ctrl.time:
+                    self.ctrl.finish(self.score)
+                    self._clock_timer.stop()
+                    self._show_waiting_overlay(f"Второй игрок еще не финишировал\n, ждём его…")
+                    return
         self.display_number('timer', self.elapsed_seconds)
 
     def _show_end_game(self, message: str, winner_name: str = "", score: int = 0):
@@ -542,7 +548,8 @@ class GameWindow(QWidget):
         audio.switch_to_lobby()
         if self.main_window is not None:
             self.main_window.show()
-        self.ctrl.close_game()
+        if not self.solo_game:
+            self.ctrl.close_game()
         if self.opp_view:
             self.opp_view.close()
         self.close()
