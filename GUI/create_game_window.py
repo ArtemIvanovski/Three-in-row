@@ -99,7 +99,7 @@ class CreateGameWindow(QDialog):
         self.mode_combo.hide()
 
         self.spin_time = QSpinBox(self)
-        self.spin_time.setRange(10, 999)
+        self.spin_time.setRange(20, 999)
         self.spin_time.setSuffix(" с")
         self.spin_time.setFont(QFont(self.font, 12))
         self.spin_time.setGeometry(50, 280, 300, 30)

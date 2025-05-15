@@ -9,18 +9,15 @@ from logger import logger
 
 
 class Board:
-    """Логика игрового поля “3-в-ряд” без графики и сети."""
     ROWS, COLS = 8, 7
     COLORS = list(Color)
 
-    # ------------------------------------------------------------------ ctor
     def __init__(self):
         self.grid: List[List[Element | None]] = [
             [None] * self.COLS for _ in range(self.ROWS)
         ]
         self._fill_start_board()
 
-    # ---------------------------------------------------------------- public
     def cell(self, r: int, c: int) -> Element | None:
         return self.grid[r][c]
 
@@ -28,12 +25,6 @@ class Board:
              a: Tuple[int, int],
              b: Tuple[int, int]
              ) -> Tuple[bool, Set[Tuple[int, int]], List[Tuple[int, int, Bonus]]]:
-        """
-        Делает обмен a<->b, возвращает:
-          - success: bool
-          - removed: set[(r,c)] — без бонусных клеток
-          - bonuses: list[(r,c, bonus_type)]
-        """
         r1, c1 = a
         r2, c2 = b
         self.grid[r1][c1], self.grid[r2][c2] = self.grid[r2][c2], self.grid[r1][c1]
@@ -135,7 +126,6 @@ class Board:
         return bonuses
 
     def has_move(self) -> bool:
-        """Есть ли хоть один допустимый обмен, дающий линию."""
         for r in range(self.ROWS):
             for c in range(self.COLS):
                 if c + 1 < self.COLS and self._will_match((r, c), (r, c + 1)):
@@ -144,9 +134,7 @@ class Board:
                     return True
         return False
 
-    # --------------------------------------------------------- инициализация
     def _fill_start_board(self):
-        """Генерируем поле без линий, но чтобы ход точно существовал."""
         while True:
             for r in range(self.ROWS):
                 for c in range(self.COLS):
@@ -154,9 +142,7 @@ class Board:
             if not self._collect_matches() and self.has_move():
                 break
 
-    # ----------------------------------------------------------- матч-логика
     def _any_matches_after(self, cells: Iterable[Tuple[int, int]]) -> bool:
-        """Проверяем линии только вокруг изменённых ячеек."""
         for r, c in cells:
             if self._line_length(r, c, 0, 1) >= 3 or self._line_length(r, c, 1, 0) >= 3:
                 return True
@@ -164,7 +150,7 @@ class Board:
 
     def _line_length(self, r, c, dr, dc) -> int:
         start = self.grid[r][c]
-        if start is None:  # <<<
+        if start is None:
             return 0
         color = start.color
         cnt = 1
@@ -347,10 +333,10 @@ class Board:
                     if not run or self.grid[r][c].color == self.grid[r][run[-1]].color:
                         run.append(c)
                     else:
-                        place_bonus([(r, x) for x in run]);
+                        place_bonus([(r, x) for x in run])
                         run = [c]
                 else:
-                    place_bonus([(r, x) for x in run]);
+                    place_bonus([(r, x) for x in run])
                     run = []
             place_bonus([(r, x) for x in run])
 
@@ -362,10 +348,10 @@ class Board:
                     if not run or self.grid[r][c].color == self.grid[run[-1]][c].color:
                         run.append(r)
                     else:
-                        place_bonus([(x, c) for x in run]);
+                        place_bonus([(x, c) for x in run])
                         run = [r]
                 else:
-                    place_bonus([(x, c) for x in run]);
+                    place_bonus([(x, c) for x in run])
                     run = []
             place_bonus([(x, c) for x in run])
 
@@ -379,15 +365,13 @@ class Board:
                 if ch == '.':
                     self.grid[r][c] = None
                 else:
-                    # цвет по первой букве
-                    color = {
-                        'r': Color.RED, 'o': Color.ORANGE,
-                        'p': Color.PURPLE, 'y': Color.YELLOW
-                    }[ch.lower()]
-                    bonus = {
-                        'h': Bonus.ROCKET_H, 'v': Bonus.ROCKET_V,
-                        'B': Bonus.BOMB
-                    }.get(ch, Bonus.NONE)
+                    ch_low = ch.lower()
+                    color_map = {'r': Color.RED, 'o': Color.ORANGE, 'p': Color.PURPLE, 'y': Color.YELLOW,
+                                 'h': Color.RED, 'v': Color.ORANGE, 'b': Color.PURPLE}
+                    bonus_map = {'h': Bonus.ROCKET_H, 'v': Bonus.ROCKET_V, 'b': Bonus.BOMB}
+
+                    color = color_map[ch_low]
+                    bonus = bonus_map.get(ch_low, Bonus.NONE)
                     self.grid[r][c] = Element(r, c, color, bonus)
 
     def to_matrix(self) -> list[list[str]]:

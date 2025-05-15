@@ -4,11 +4,11 @@ import random
 from typing import Callable
 from typing import Set, List, Tuple
 
-from GUI.tile_label import TileLabel
 from core import protocol as proto
 from core.board import Board
 from core.element import Element
 from core.enums import Color, Bonus
+from logger import logger
 
 
 class GameController:
@@ -19,15 +19,26 @@ class GameController:
                  is_client: bool = True,
                  on_send: Callable[[bytes], None] | None = None,
                  on_close: Callable[[], None] | None = None):
+        self.is_opp_finish = False
+        self.winner_score = None
+        self.my_score = None
+        self.b_col = None
+        self.b_row = None
+        self.a_col = None
+        self.a_row = None
+        self.swap_occurred = False
+        self.new_board = None
+        self.success = None
         self.bonuses = None
         self.removed = None
-        self.b_lbl = None
-        self.a_lbl = None
         self.spawned = None
         self.fallen = None
         self.exit_nickname = None
         self.mode = mode
         self.time = time
+        self.opp_time = 1
+        self.opp_score = 0
+        self.opp_board = None
         self.nicknames = None
         self._send = on_send
         self._close_net = on_close
@@ -75,17 +86,22 @@ class GameController:
         idx = (self.queue.index(self.current) + 1) % len(self.queue)
         return self.queue[idx]
 
-    def completed_swap(self, removed: Set[Tuple[int, int]], bonuses: List[Tuple[int, int, Bonus]]):
-        if self._send:
-            self._send(proto.dumps(proto.completed_swap(removed=removed, bonuses=bonuses)))
-
-    def swap(self, a_lbl: TileLabel, b_lbl: TileLabel):
+    def swap(self, a_lbl: Tuple[int, int], b_lbl: Tuple[int, int], success: bool, removed: Set[Tuple[int, int]],
+             bonuses: List[Tuple[int, int, Bonus]]):
+        self.current = self.my_nickname
         self.current = self._next_player()
+        self.is_my_step = self.my_nickname == self.current
+        if self.mode == "time":
+            self.is_my_step = True
         if self._send:
-            self._send(proto.dumps(proto.swap(a_lbl=a_lbl.element, b_lbl=b_lbl.element, next_player=self.current)))
+            self._send(proto.dumps(proto.swap(a_lbl=a_lbl, b_lbl=b_lbl, next_player=self.current,
+                                              success=success, removed=removed, bonuses=bonuses,
+                                              board=self.board.to_matrix())))
 
-    def auto_swap(self, fallen: tuple[list[tuple[Element, int, int]], spawned: list[Element]]):
-        self.current = self._next_player()
+    def auto_swap(self, fallen: list[tuple[int, int, int, int]], spawned: list[Element]):
+        self.is_my_step = self.my_nickname == self.current
+        if self.mode == "time":
+            self.is_my_step = True
         if self._send:
             self._send(proto.dumps(proto.auto_swap(fallen=fallen, spawned=spawned,
                                                    board=self.board.to_matrix())))
@@ -96,10 +112,18 @@ class GameController:
             return True
         elif data["command"] == "swap":
             self.handle_swap(data)
-        elif data["command"] == "completed_swap":
-            self.handle_completed_swap(data)
         elif data["command"] == "auto_swap":
             self.handle_auto_swap(data)
+        elif data["command"] == "end_game":
+            self.end_game(data)
+        elif data["command"] == "score":
+            self.handle_score(data)
+        elif data["command"] == "board":
+            self.handle_board(data)
+        elif data["command"] == "time":
+            self.handle_time(data)
+        elif data["command"] == "finish":
+            self.handle_finish(data)
         elif data["command"] == "end_game":
             self.end_game(data)
 
@@ -108,12 +132,28 @@ class GameController:
         self.current = data.get("current_player")
         self.is_my_step = self.my_nickname == self.current
         self.board = Board()
-        self.time = data.get("time")
+        self.time = data.get("time_limit")
         self.board.board_from_matrix(data.get("board"))
         self.nicknames = data.get("nicknames")
         self.mode = data.get("mode")
 
     def handle_auto_swap(self, data):
+        self.fallen = [
+            (f["old_r"], f["old_c"], f["new_r"], f["new_c"])
+            for f in data["fallen"]
+        ]
+        self.spawned = [
+            Element(d["x"], d["y"], Color(d["color"]), Bonus[d["bonus"]])
+            for d in data["spawned"]
+        ]
+        self.is_my_step = self.my_nickname == self.current
+        if self.mode == "time":
+            self.is_my_step = True
+        self.new_board = data.get("board")
+        self.current = data.get("next_player")
+        self._dispatch("auto_swap")
+
+    def handle_auto_swap_circle(self, data):
         self.fallen = []
         for item in data["fallen"]:
             e = Element(item["x"], item["y"], Color(item["color"]), Bonus[item["bonus"]])
@@ -126,27 +166,38 @@ class GameController:
         self.is_my_step = self.my_nickname == self.current
         if self.mode == "time":
             self.is_my_step = True
-        self.board.board_from_matrix(data.get("board"))
         self._dispatch("auto_swap")
 
     def handle_swap(self, data):
-        a = data["a_lbl"]
-        b = data["b_lbl"]
+        self.a_row = data.get("a_row")
+        self.a_col = data.get("a_col")
+        self.b_row = data.get("b_row")
+        self.b_col = data.get("b_col")
+        self.current = data.get("next_player")
         self.is_my_step = self.my_nickname == self.current
         if self.mode == "time":
             self.is_my_step = True
-        self.a_lbl = Element(a["x"], a["y"], Color(a["color"]), Bonus[a["bonus"]])
-        self.b_lbl = Element(b["x"], b["y"], Color(b["color"]), Bonus[b["bonus"]])
+
+        self.removed = data.get("removed")
+        self.bonuses = data.get("bonuses")
+        self.success = data.get("success")
+        self.new_board = data.get("board")
+        self.swap_occurred = True
         self._dispatch("swap")
 
     def end_game(self, data):
         self.winner_player = data.get("winner")
+        self.winner_score = data.get("score")
         self._dispatch("end_game")
 
-    def win(self):
+    def _compute_and_end_game(self):
+        if self.opp_score > self.my_score:
+            winner, winning_score = self.opponent_nickname, self.opp_score
+        else:
+            winner, winning_score = self.my_nickname, self.my_score
         if self._send:
-            self._send(proto.dumps(proto.end_game(self.my_nickname)))
-        self.end_game(proto.end_game(self.my_nickname))
+            self._send(proto.dumps(proto.end_game(winner=winner, score_=winning_score)))
+        self.end_game(proto.end_game(winner=winner, score_=winning_score))
 
     def close_game(self):
         if self._close_net:
@@ -156,7 +207,52 @@ class GameController:
         self.exit_nickname = nickname
         self._dispatch("error")
 
-    def handle_completed_swap(self, data):
-        self.removed = data.get("removed")
-        self.bonuses = data.get("bonuses")
-        self._dispatch("completed_swap")
+    def update_board(self):
+        if self.swap_occurred:
+            self.swap_occurred = False
+            self.board.board_from_matrix(self.new_board)
+
+    def time_update(self, time: int):
+        if self._send:
+            self._send(proto.dumps(proto.time(time_=time)))
+
+    def handle_time(self, data):
+        self.opp_time = data.get("time")
+        self._dispatch("time")
+
+    def score_update(self, score: int):
+        print("update score")
+        if self._send:
+            self._send(proto.dumps(proto.score(score_=score)))
+
+    def handle_score(self, data):
+        self.opp_score = data.get("score")
+        self._dispatch("score")
+
+    def board_update_for_opp(self):
+        if self._send:
+            self._send(proto.dumps(proto.board(board_=self.board.to_matrix())))
+
+    def handle_board(self, data):
+        self.opp_board = Board()
+        self.opp_board.board_from_matrix(data.get("board"))
+        self._dispatch("board")
+
+    @property
+    def opponent_nickname(self) -> str | None:
+        for nick in self.nicknames:
+            if nick != self.my_nickname:
+                return nick
+        return None
+
+    def finish(self, score: int):
+        self.my_score = score
+        if self.is_opp_finish:
+            self._compute_and_end_game()
+        else:
+            if self._send:
+                self._send(proto.dumps(proto.finish(score_=score)))
+
+    def handle_finish(self, data):
+        self.is_opp_finish = True
+        self.opp_score = data.get("score")

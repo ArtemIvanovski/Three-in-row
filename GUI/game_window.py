@@ -1,19 +1,19 @@
 import random
+from typing import Set, Tuple, List
 
-from PyQt5.QtCore import QPoint, QSize, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QTimer
-from PyQt5.QtGui import QPixmap, QIcon, QFontDatabase, QFont, QBrush, QColor
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import QPoint, QSize, QPropertyAnimation, QEasingCurve, QParallelAnimationGroup, QTimer, Qt
+from PyQt5.QtGui import QPixmap, QIcon, QFontDatabase, QFont
 from PyQt5.QtWidgets import (
-    QMainWindow, QLabel,
-    QFrame, QPushButton, QGraphicsRectItem, QMessageBox, QGraphicsScene, QWidget
+    QLabel,
+    QFrame, QPushButton, QMessageBox, QWidget
 )
 
+from GUI.board_view import BoardView
 from GUI.end_game_window import EndGameWindow
 from GUI.explosion_label import ExplosionLabel
 from GUI.settings_window import SettingsWindow
 from GUI.tile_label import TileLabel
 from core.audio_manager import AudioManager
-from core.board import Board
 from core.enums import Bonus, Color
 from core.game_controller import GameController
 from core.setting_deploy import get_resource_path
@@ -45,6 +45,11 @@ class GameWindow(QWidget):
 
     def __init__(self, ctrl: GameController = None, main_window=None):
         super().__init__()
+        self.end_game_window = None
+        self.waiting_overlay = None
+        self.opp_view = None
+        self.old_b = None
+        self.old_a = None
         self.main_window = main_window
         self.main_window.hide()
         self.ctrl = ctrl
@@ -177,12 +182,13 @@ class GameWindow(QWidget):
         self.animations.append(anim)
 
     def handle_swap_request(self, a_lbl: TileLabel, b_lbl: TileLabel):
-        if not self.ctrl.is_my_step:
+        if self.ctrl.mode != "time" and not self.ctrl.is_my_step:
             return
-        self.ctrl.swap(a_lbl, b_lbl)
         if abs(a_lbl.row - b_lbl.row) + abs(a_lbl.col - b_lbl.col) != 1:
             return
         audio.play_sound("swap")
+        self.old_a = (a_lbl.row, a_lbl.col)
+        self.old_b = (b_lbl.row, b_lbl.col)
         self._animate_swap(a_lbl, b_lbl,
                            lambda: self._after_swap_logic(a_lbl, b_lbl))
 
@@ -190,13 +196,13 @@ class GameWindow(QWidget):
         a = (a_lbl.row, a_lbl.col)
         b = (b_lbl.row, b_lbl.col)
         success, removed, bonuses = self.board.swap(a, b)
-        print(f"removed {removed}")
-        print(f"bonuses {bonuses}")
+        logger.info(f"old a_lbl: {self.old_a}")
+        logger.info(f"old b_lbl: {self.old_b}")
+        # self.ctrl.swap(a_lbl=self.old_a, b_lbl=self.old_b, success=success,
+        #                removed=removed, bonuses=bonuses)
         if not success:
             self._animate_swap(a_lbl, b_lbl, on_finished=None)
             return
-
-        self.ctrl.completed_swap(removed=removed, bonuses=bonuses)
 
         audio.play_sound("nice_swap")
         if not bonuses and removed:
@@ -219,7 +225,7 @@ class GameWindow(QWidget):
                         audio.play_sound("boom")
                     else:
                         audio.play_sound("removed")
-            # self._update_game()
+            self._update_game()
             return
 
         self._update_score(len(removed))
@@ -249,14 +255,26 @@ class GameWindow(QWidget):
             self.tile_labels[(r, c)] = lbl
             audio.play_sound("add_bonus")
 
-        # self._update_game()
+        self._update_game()
 
     def _update_game(self):
         fallen, spawned = self.board.collapse_and_fill()
-        for elem, new_r, new_c in fallen:
 
+        fallen_to_send: list[Tuple[int, int, int, int]] = []
+
+        for elem, new_r, new_c in fallen:
             for lbl in self.tile_labels.values():
                 if lbl.element is elem:
+                    fallen_to_send.append((lbl.row, lbl.col, new_r, new_c))
+                    break
+
+        # self.ctrl.auto_swap(fallen=fallen_to_send, spawned=spawned)
+
+        for elem, new_r, new_c in fallen:
+            for lbl in self.tile_labels.values():
+                if lbl.element is elem:
+                    print(f"elem {elem}")
+                    print(f"lbl row {lbl.row}  lbl col {lbl.col}")
                     lbl.row, lbl.col = new_r, new_c
                     self.tile_labels.pop((elem.y, elem.x), None)  # до смены координат
                     self.tile_labels[(new_r, new_c)] = lbl
@@ -279,6 +297,10 @@ class GameWindow(QWidget):
             self.tile_labels[(elem.x, elem.y)] = lbl
             self._animate_fall(lbl, elem.x)
             audio.play_sound("falling")
+
+        if self.ctrl.mode == "time":
+            self.ctrl.board = self.board
+            self.ctrl.board_update_for_opp()
 
         while self.board.step():
             removed, bonuses = self.board.get_auto_matched()
@@ -336,6 +358,10 @@ class GameWindow(QWidget):
                 self.tile_labels[(elem.x, elem.y)] = lbl
                 self._animate_fall(lbl, elem.x)
                 audio.play_sound("falling")
+
+            if self.ctrl.mode == "time":
+                self.ctrl.board = self.board
+                self.ctrl.board_update_for_opp()
 
     def _animate_swap(self, t1: TileLabel, t2: TileLabel, on_finished=None):
         group = QParallelAnimationGroup(self)
@@ -453,12 +479,17 @@ class GameWindow(QWidget):
 
     def _update_score(self, score: int):
         self.score += score
-        if self.score >= 999:
-            self._show_end_game("Ты хорош набрал огогого!", winner_name="Перчик")
-            return
+        if self.ctrl.mode == "time":
+            self.ctrl.score_update(self.score)
+            if self.score > 999:
+                self.ctrl.finish(self.score)
+                self._clock_timer.stop()
+                self._show_waiting_overlay(f"Второй игрок еще не финишировал\n, ждём его…")
+                return
         self.display_number('score', self.score)
 
     def display_number(self, kind, value, color: str = None, x=None, y=None):
+        value = 999 if value > 999 else value
         _colors = ['blue', 'red', 'green', 'orange', 'purple', 'yellow']
         if color is None:
             color = random.choice(_colors)
@@ -495,52 +526,78 @@ class GameWindow(QWidget):
 
     def _tick_clock(self):
         self.elapsed_seconds += 1
-        if self.elapsed_seconds >= 999:
-            self._show_end_game("Время вышло", winner_name="перчик")
+        if self.ctrl.mode == "time":
+            self.ctrl.time_update(self.elapsed_seconds)
+            if self.elapsed_seconds > self.ctrl.time:
+                self.ctrl.finish(self.score)
+                self._clock_timer.stop()
+                self._show_waiting_overlay(f"Второй игрок еще не финишировал\n, ждём его…")
+                return
         self.display_number('timer', self.elapsed_seconds)
 
-    def _show_end_game(self, message: str, winner_name: str = ""):
-        dlg = EndGameWindow(self, player_name=winner_name, message=message)
-        dlg.exec_()
+    def _show_end_game(self, message: str, winner_name: str = "", score: int = 0):
+        self.end_game_window = EndGameWindow(self, player_name=winner_name, message=message, score=score)
+        self.end_game_window.exec_()
         self._clock_timer.stop()
         audio.switch_to_lobby()
         if self.main_window is not None:
             self.main_window.show()
         self.ctrl.close_game()
+        if self.opp_view:
+            self.opp_view.close()
         self.close()
 
     def apply_state(self, command: str):
         logger.info(f"Обработка команды {command}")
+        logger.info(f"Мой ход {self.ctrl.is_my_step}")
         if command == "start_game":
             self.board = self.ctrl.board
             self.render_from_board(first=True)
+
+            if self.ctrl.mode == "time":
+                self.opp_view = BoardView()
+                self.opp_view.show()
+                self.opp_view.update_board(self.board, True)
+        elif command == "board":
+            self.opp_view.update_board(self.ctrl.opp_board)
+        elif command == "time":
+            self.opp_view.tick_clock(self.ctrl.opp_time)
+        elif command == "score":
+            self.opp_view.update_score(self.ctrl.opp_score)
         elif command == "swap":
             self.ctrl.is_my_step = True
-            a_elem = self.ctrl.a_lbl
-            b_elem = self.ctrl.b_lbl
-            logger.info(f"a_elem{a_elem}")
-            logger.info(f"b_elem{b_elem}")
-
+            a_row = self.ctrl.a_row
+            a_col = self.ctrl.a_col
+            b_row = self.ctrl.b_row
+            b_col = self.ctrl.b_col
+            logger.info(f"a_row {a_row} a_col {a_col}")
+            logger.info(f"b_row {b_row} b_col {b_col}")
+            success = self.ctrl.success
+            removed = self.ctrl.removed
+            bonuses = self.ctrl.bonuses
             a_tile = None
             b_tile = None
             for lbl in self.tile_labels.values():
-                if lbl.element == a_elem:
+                if lbl.row == a_row and lbl.col == a_col:
                     a_tile = lbl
-                elif lbl.element == b_elem:
+                elif lbl.row == b_row and lbl.col == b_col:
                     b_tile = lbl
                 if a_tile and b_tile:
                     break
 
             if a_tile and b_tile:
-                logger.info("self.handle_swap_request(a_tile, b_tile)")
-                self.handle_swap_request_my_swap(a_tile, b_tile)
+                self.handle_swap_request_my_swap(a_tile, b_tile, success=success, removed=removed, bonuses=bonuses)
             else:
-                logger.warning(f"Не нашли соответствующие TileLabel для network step: {a_elem}, {b_elem}")
-        elif command == "completed_swap":
-            self.completed_swap()
+                logger.warning(f"Не нашли соответствующие TileLabel для network step")
+        elif command == "auto_swap":
+            self.auto_swap()
         elif command == "end_game":
-            self._show_end_game(message="С победой", winner_name=self.ctrl.winner_player)
+            if self.waiting_overlay:
+                self.waiting_overlay.close()
+            self.setEnabled(True)
+            self._show_end_game(message="С победой", winner_name=self.ctrl.winner_player, score=self.ctrl.winner_score)
         elif command == "error":
+            self._clock_timer.stop()
             if self.ctrl.is_client:
                 text = "Соединение с сервером потеряно."
             else:
@@ -549,36 +606,32 @@ class GameWindow(QWidget):
             if self.main_window:
                 self.main_window.show()
             self.ctrl.close_game()
+            if self.opp_view:
+                self.opp_view.close()
+            if self.end_game_window:
+                self.end_game_window.close()
             self.close()
-        self.update()
 
-    def update(self):
-        self.ctrl.is_my_step = self.ctrl.current == self.ctrl.my_nickname
-        logger.info(f"is_my_step {self.ctrl.is_my_step}")
-
-    def handle_swap_request_my_swap(self, a_lbl: TileLabel, b_lbl: TileLabel):
+    def handle_swap_request_my_swap(self, a_lbl: TileLabel, b_lbl: TileLabel, success: bool,
+                                    removed: Set[Tuple[int, int]], bonuses: List[Tuple[int, int, Bonus]]):
         if abs(a_lbl.row - b_lbl.row) + abs(a_lbl.col - b_lbl.col) != 1:
             return
         audio.play_sound("swap")
         self._animate_swap(a_lbl, b_lbl,
-                           None)
+                           lambda: self._after_swap_logic_my_swap(a_lbl, b_lbl, success=success, removed=removed,
+                                                                  bonuses=bonuses))
 
-    def _after_swap_logic_my_swap(self, a_lbl, b_lbl):
-        a = (a_lbl.row, a_lbl.col)
-        b = (b_lbl.row, b_lbl.col)
-        self.is_show_swap = False
-        success, removed, bonuses = self.board.swap(a, b)
+    def _after_swap_logic_my_swap(self, a_lbl, b_lbl, success: bool, removed: Set[Tuple[int, int]],
+                                  bonuses: List[Tuple[int, int, Bonus]]):
         if not success:
             self._animate_swap(a_lbl, b_lbl, on_finished=None)
             return
 
         audio.play_sound("nice_swap")
         if not bonuses and removed:
-            return
             self._update_score(len(removed))
             for r, c in removed:
                 lbl = self.tile_labels.pop((r, c), None)
-
                 if lbl and lbl.element.bonus in [Bonus.ROCKET_H, Bonus.ROCKET_V]:
                     self._fire_rocket(r, c, lbl.element.bonus)
                     lbl.deleteLater()
@@ -594,9 +647,13 @@ class GameWindow(QWidget):
                         audio.play_sound("boom")
                     else:
                         audio.play_sound("removed")
-            # self._update_game()
+
+            self.ctrl.update_board()
+            self.board = self.ctrl.board
             return
 
+        self.ctrl.update_board()
+        self.board = self.ctrl.board
         self._update_score(len(removed))
         for r, c in removed:
             lbl = self.tile_labels.pop((r, c), None)
@@ -611,8 +668,11 @@ class GameWindow(QWidget):
             explosion.show()
             audio.play_sound("removed")
 
-        for r, c, bonus in bonuses:
+        for bonus in bonuses:
+            r = bonus["r"]
+            c = bonus["c"]
             elem = self.board.cell(r, c)
+            print(elem)
             lbl = TileLabel(self, elem)
             pix = self._pix_for_elem(elem)
             lbl.setPixmap(pix)
@@ -624,58 +684,71 @@ class GameWindow(QWidget):
             self.tile_labels[(r, c)] = lbl
             audio.play_sound("add_bonus")
 
-    def completed_swap(self):
-        removed = self.ctrl.removed
-        bonuses = self.ctrl.bonuses
-        audio.play_sound("nice_swap")
-        if not bonuses and removed:
-            self._update_score(len(removed))
-            for r, c in removed:
-                lbl = self.tile_labels.pop((r, c), None)
+    def print_matrix(self):
+        lines: List[str] = []
+        for r in range(self.ROWS):
+            row_chars: List[str] = []
+            for c in range(self.COLS):
+                lbl = self.tile_labels.get((r, c))
+                if lbl and lbl.element and lbl.element.color:
+                    char = lbl.element.color.name[0]
+                else:
+                    char = '.'
+                row_chars.append(char)
+            lines.append(' '.join(row_chars))
+        print('\n'.join(lines))
 
-                if lbl and lbl.element.bonus in [Bonus.ROCKET_H, Bonus.ROCKET_V]:
-                    self._fire_rocket(r, c, lbl.element.bonus)
-                    lbl.deleteLater()
-                elif lbl:
-                    explosion = ExplosionLabel(self, lbl.element.color.value, lbl.pos(), self.CELL_SIZE, fps=100,
-                                               bonus=lbl.element.bonus)
+    def auto_swap(self):
+        self.ctrl.update_board()
+        self.board = self.ctrl.board
+        fallen, spawned = self.ctrl.fallen, self.ctrl.spawned
+        print(f"fallen {fallen}")
+        print("\n\n\n----------my board:-----------\n\n\n\n")
+        print(self.board)
+        print("\n\n\n----------self.tile_labels-----------\n\n\n\n")
+        self.print_matrix()
 
-                    lbl.deleteLater()
-
-                    explosion.raise_()
-                    explosion.show()
-                    if lbl.element.bonus == Bonus.BOMB:
-                        audio.play_sound("boom")
-                    else:
-                        audio.play_sound("removed")
-            # self._update_game()
-            return
-
-        self._update_score(len(removed))
-        for r, c in removed:
-            lbl = self.tile_labels.pop((r, c), None)
+        for old_r, old_c, new_r, new_c in fallen:
+            lbl = self.tile_labels.pop((old_r, old_c), None)
             if not lbl:
                 continue
+            lbl.row, lbl.col = new_r, new_c
+            self.tile_labels[(new_r, new_c)] = lbl
+            self._animate_fall(lbl, new_r)
+            audio.play_sound("falling")
 
-            explosion = ExplosionLabel(self, lbl.element.color.value, lbl.pos(), self.CELL_SIZE, fps=100)
-
-            lbl.deleteLater()
-
-            explosion.raise_()
-            explosion.show()
-            audio.play_sound("removed")
-
-        for r, c, bonus in bonuses:
-            elem = self.board.cell(r, c)
+        for elem in spawned:
             lbl = TileLabel(self, elem)
             pix = self._pix_for_elem(elem)
             lbl.setPixmap(pix)
-            x = self.GRID_ORIGIN.x() + c * self.CELL_SIZE
-            y = self.GRID_ORIGIN.y() + r * self.CELL_SIZE
-            lbl.setGeometry(x, y, self.CELL_SIZE, self.CELL_SIZE)
+
+            x = self.GRID_ORIGIN.x() + elem.y * self.CELL_SIZE
+            y = self.GRID_ORIGIN.y() - elem.x * self.CELL_SIZE
+            print(f"x {x} y {y}")
+            lbl.setGeometry(x, y,
+                            self.CELL_SIZE, self.CELL_SIZE)
             lbl.raise_()
             lbl.show()
-            self.tile_labels[(r, c)] = lbl
-            audio.play_sound("add_bonus")
 
-        # self._update_game()
+            self.tile_labels[(elem.x, elem.y)] = lbl
+            self._animate_fall(lbl, elem.x)
+            audio.play_sound("falling")
+
+    def closeEvent(self, event):
+        if hasattr(self, "_settings") and self._settings.isVisible():
+            self._settings.close()
+            event.ignore()
+            return
+
+        super().closeEvent(event)
+
+    def _show_waiting_overlay(self, text: str):
+        if self.waiting_overlay is None:
+            self.waiting_overlay = QLabel(text, self)
+            self.waiting_overlay.setAlignment(Qt.AlignCenter)
+            self.waiting_overlay.setStyleSheet(
+                'background: rgba(0,0,0,0.5); color: white; font-size: 24px;'
+            )
+            self.waiting_overlay.setGeometry(0, 0, self.width(), self.height())
+        self.waiting_overlay.show()
+        self.setEnabled(False)

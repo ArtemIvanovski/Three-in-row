@@ -57,3 +57,13 @@ class TileLabel(QLabel):
             parent.handle_swap_request(self, tgt)
         self._drag_origin = None
         self._dragging = False
+
+    def __repr__(self):
+        return (
+            f"<TileLabel row={self.row} col={self.col} "
+            f"color={self.element.color.name} bonus={self.element.bonus.name}>"
+            f"element x={self.element.x} element y={self.element.y}>"
+        )
+
+    def __str__(self):
+        return self.__repr__()

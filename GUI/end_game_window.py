@@ -6,7 +6,7 @@ from core.setting_deploy import get_resource_path
 
 
 class EndGameWindow(QDialog):
-    def __init__(self, parent=None, player_name: str = "", message: str = ""):
+    def __init__(self, parent=None, player_name: str = "", message: str = "", score: int = 0):
         super().__init__(parent)
         self.setWindowOpacity(0.0)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
@@ -38,10 +38,16 @@ class EndGameWindow(QDialog):
         lbl_name.setGeometry(50, 80, 300, 30)
         lbl_name.setAlignment(Qt.AlignCenter)
 
+        lbl_score = QLabel(f"Счет игрока: {score}", self)
+        lbl_score.setFont(QFont(font_family, 14))
+        lbl_score.setStyleSheet("color: #000;")
+        lbl_score.setGeometry(50, 120, 300, 30)
+        lbl_score.setAlignment(Qt.AlignCenter)
+
         lbl_msg = QLabel(message, self)
         lbl_msg.setFont(QFont(font_family, 16))
         lbl_msg.setStyleSheet("color: #333;")
-        lbl_msg.setGeometry(50, 120, 300, 60)
+        lbl_msg.setGeometry(50, 140, 300, 60)
         lbl_msg.setWordWrap(True)
         lbl_msg.setAlignment(Qt.AlignCenter)
 

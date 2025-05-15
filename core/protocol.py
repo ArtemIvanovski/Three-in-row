@@ -45,28 +45,76 @@ def start_game(
 
 
 def swap(
-        a_lbl: Element,
-        b_lbl: Element,
+        a_lbl: Tuple[int, int],
+        b_lbl: Tuple[int, int],
         next_player: str,
+        removed: Set[Tuple[int, int]],
+        bonuses: List[Tuple[int, int, Bonus]],
+        success: bool,
+        board: List[List[str]]
 ) -> Dict[str, Any]:
-    """
-    Одиночный ход (оба режима):
-    player    — кто походил,
-    a, b      — координаты переставленных плиток,
-    score     — текущий счёт у игрока,
-    time_left — сколько осталось секунд (в time-mode).
-    """
+    a_row, a_col = a_lbl
+    b_row, b_col = b_lbl
     return {
         "command": "swap",
-        "a_lbl": _elem_to_dict(a_lbl),
-        "b_lbl": _elem_to_dict(b_lbl),
+        "a_row": a_row,
+        "a_col": a_col,
+        "b_row": b_row,
+        "b_col": b_col,
         "next_player": next_player,
+        "board": board,
+        "success": success,
+        "removed": [[r, c] for (r, c) in sorted(removed)],
+        "bonuses": [
+            {"r": r, "c": c, "bonus": bonus.name}
+            for (r, c, bonus) in bonuses
+        ]
     }
 
 
 def auto_swap(
+        fallen: List[Tuple[int, int, int, int]],
+        spawned: List[Element],
+        board: List[List[str]]
+) -> Dict[str, Any]:
+    return {
+        "command": "auto_swap",
+        "fallen": [
+            {"old_r": o_r, "old_c": o_c, "new_r": n_r, "new_c": n_c}
+            for o_r, o_c, n_r, n_c in fallen
+        ],
+        "spawned": [
+            _elem_to_dict(e) for e in spawned
+        ],
+        "board": board,
+    }
+
+
+def board(board_: List[List[str]]) -> Dict[str, Any]:
+    return {
+        "command": "board",
+        "board": board_,
+    }
+
+
+def score(score_: int) -> Dict[str, Any]:
+    return {
+        "command": "score",
+        "score": score_,
+    }
+
+
+def time(time_: int) -> Dict[str, Any]:
+    return {
+        "command": "time",
+        "time": time_,
+    }
+
+
+def auto_swap_circle(
         fallen: List[Tuple[Element, int, int]],
         spawned: List[Element],
+        bonuses: List[Tuple[int, int, Bonus]],
         board: List[List[str]]
 ) -> Dict[str, Any]:
     return {
@@ -78,41 +126,17 @@ def auto_swap(
         "spawned": [
             _elem_to_dict(e) for e in spawned
         ],
+        "bonuses": [
+            {"r": r, "c": c, "bonus": bonus.name}
+            for (r, c, bonus) in bonuses
+        ],
         "board": board,
     }
 
 
-def update_score(
-        score: int
-) -> Dict[str, Any]:
-    return {
-        "command": "score_update",
-        "score": score
-    }
+def end_game(winner: str, score_: int) -> Dict:
+    return {"command": "end_game", "winner": winner, "score": score_}
 
 
-def time_update(
-        time_left: int
-) -> Dict[str, Any]:
-    return {
-        "command": "time_update",
-        "time_left": time_left
-    }
-
-
-def completed_swap(
-        removed: Set[Tuple[int, int]],
-        bonuses: List[Tuple[int, int, Bonus]]
-) -> Dict[str, Union[list[list[Any]], list[dict[str, Any]], str]]:
-    return {
-        "command": "completed_swap",
-        "removed": [[r, c] for (r, c) in sorted(removed)],
-        "bonuses": [
-            {"r": r, "c": c, "bonus": bonus.name}
-            for (r, c, bonus) in bonuses
-        ]
-    }
-
-
-def end_game(winner: str) -> Dict:
-    return {"command": "end_game", "winner": winner}
+def finish(score_: int) -> Dict:
+    return {"command": "finish", "score": score_}
