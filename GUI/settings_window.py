@@ -1,4 +1,4 @@
-from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
+from PyQt5.QtCore import Qt, QSize, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve, pyqtSignal
 from PyQt5.QtGui import QPixmap, QIcon, QFont, QFontDatabase
 from PyQt5.QtWidgets import (
     QDialog, QLabel, QPushButton
@@ -11,6 +11,7 @@ audio = AudioManager.instance()
 
 
 class SettingsWindow(QDialog):
+    homeClicked = pyqtSignal()
 
     def __init__(self, parent, is_home_visible=True):
         super().__init__(parent)
@@ -58,7 +59,7 @@ class SettingsWindow(QDialog):
             self.home_btn.setIconSize(QSize(80, 80))
             self.home_btn.setFlat(True)
             self.home_btn.setGeometry(210, 155, 80, 80)
-            self.home_btn.clicked.connect(self.close)
+            self.home_btn.clicked.connect(self._on_home)
 
         self.sound_on = True
         self.sound_btn = self._make_icon_button("sound", 24, 155)
@@ -129,3 +130,7 @@ class SettingsWindow(QDialog):
             group.addAnimation(bounce(btn, dur=1000))
         fade.start()
         group.start()
+
+    def _on_home(self):
+        self.close()
+        self.homeClicked.emit()
