@@ -90,7 +90,7 @@ class CreateGameWindow(QDialog):
 
         self.mode_combo = QComboBox(self)
         self.mode_combo.setFont(QFont(self.font, 12))
-        self.mode_combo.addItems(["-- режим --", "На время", "Шахматный"])
+        self.mode_combo.addItems(["-- режим --", "На время"])
         self.mode_combo.setStyleSheet(
             "background-color: rgb(254,243,219); border:2px solid #af5829; border-radius:6px;"
         )
