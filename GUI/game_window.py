@@ -540,7 +540,7 @@ class GameWindow(QWidget):
         cy = self.y() + (self.height() - self._settings.height()) // 2
         self._settings.move(cx, cy)
         self._settings.finished.connect(lambda _: self._clock_timer.start())
-        self.settings.homeClicked.connect(self._on_settings_home)
+        self._settings.homeClicked.connect(self._on_settings_home)
         self._settings.show()
 
     def _tick_clock(self):
